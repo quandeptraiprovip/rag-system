@@ -1,0 +1,648 @@
+A deep learning pipeline for product recognition on store shelves
+Alessio Tonioni
+DISI, University of Bologna
+alessio.tonioni@unibo.it
+Eugenio Serra
+DISI, University of Bologna
+eugenio.serra@studio.unibo.it
+Luigi Di Stefano
+DISI, University of Bologna
+luigi.distefano@unibo.it
+Abstract
+1. Introduction
+Recognizing products displayed on store shelves based
+on computer vision is gathering ever-increasing attention
+thanks to the potential for improving the customer’s shop-
+ping experience (e.g., via augmented reality apps, checkout-
+free stores, support to the visually impaired ...) and realiz-
+ing automatic store management (e.g., automated inventory,
+on-line shelf monitoring...).
+The seminal work on product recognition dates back to
+[12], where Merler et al. highlight the peculiar issues to
+be addressed in order to achieve a viable approach. First
+of all, the number of different items to be recognized is
+huge, in the order of several thousands for small to medium
+shops, well beyond the usual target for current state-of-the-
+art image classiﬁers. Moreover, product recognition can
+be better described as a hard instance recognition problem,
+rather than a classiﬁcation one, as it deals with lots of ob-
+jects looking remarkably similar but for small details (e.g.,
+different ﬂavors of the same brand of cereals). Then, any
+practical methodology should rely only on the information
+available within existing commercial product databases, i.e.
+at most just one high-quality image for each side of the
+package, either acquired in studio settings or rendered (see
+Figure 1-(b)). Query images for product recognition are,
+instead, taken in the store with cheap equipment (e.g., a
+smart-phone) and featuring many different items displayed
+on a shelf (see Figure 1-(a)). Unfortunately, this scenario is
+arXiv:1810.01733v3  [cs.CV]  27 Jan 2019
+far from optimal for state-of-the-art multi-class object de-
+tectors based on deep learning [15, 9, 16], which require
+a large corpus of annotated images as similar as possible
+to the deployment scenario in order to provide good per-
+formance. Even acquiring and manually annotating with
+product labels a huge dataset of in-store images is not a vi-
+able solution due to the products on sale in stores, as well
+as their appearance, changing frequently over time, which
+would mandate continuous gathering of annotated in-store
+images and retraining of the system. Conversely, a practical
+approach should be trained once and then be able to handle
+seamlessly new stores, new products and/or new packages
+of existing products (e.g., seasonal packages).
+To tackle the above issues, we address product recogni-
+tion by a pipeline consisting of three stages. Given a shelf
+image, we perform ﬁrst a class-agnostic object detection
+to extract region proposals enclosing the individual product
+items. This stage relies on a deep learning object detector
+trained to localize product items within images taken in the
+store; we will refer to this network as to the Detector. In the
+second stage, we perform product recognition separately on
+each of the region proposal provided by the Detector. Pur-
+posely, we carry out K-NN (K-Nearest Neighbours) similar-
+ity search between a global descriptor computed on the ex-
+tracted region proposal and a database of similar descriptors
+computed on the reference images available in the product
+database. Rather than deploying a general-purpose global
+descriptor (e.g., Fisher Vectors [13]), we train a CNN using
+the reference images to learn an image embedding function
+that maps RGB inputs to n-dimensional global descriptors
+amenable for product recognition; this second network will
+be referred to as to the Embedder. Eventually, to help prune
+out false detections and improve disambiguation between
+similarly looking products, in the third stage of our pipeline
+we reﬁne the recognition output by re-ranking the ﬁrst K
+proposals delivered by the similarity search. An exemplary
+output provided by the system is depicted in Figure 1-(a)).
+It is worth pointing out how our approach needs
+samples of annotated in-store images only to train the
+product-agnostic Detector, which, however, does not re-
+quire product-speciﬁc labels but just bounding boxes drawn
+around items. In section 4 we will show how the product-
+agnostic Detector can be trained once and for all so to
+achieve remarkable performance across different stores de-
+spite changes in shelves disposition and product appear-
+ance.
+Therefore, new items/packages are handled seam-
+lessly by our system simply by adding their global de-
+scriptors (computed through the Embedder) in the reference
+database. Besides, our system scales easily to the recog-
+nition of thousands of different items, as we use just one
+(or few) reference images per product, each encoded into a
+global descriptor in the order of one thousand ﬂoat numbers.
+Finally, while computationally expensive at training
+time, our system turns out light (i.e. memory efﬁcient) and
+fast at deployment time, thereby enabling near real-time
+operation. Speed and memory efﬁciency do not come at
+a price in performance, as our system compares favorably
+with respect to previous work on the standard benchmark
+dataset for product recognition.
+2. Related Work
+Grocery products recognition was ﬁrstly investigated in
+the already mentioned paper by Merler et al. [12]. Together
+with a thoughtful analysis of the problem, the authors pro-
+pose a system based on local invariant features. However,
+their experiments report performance far from conducive
+to real-world deployment in terms of accuracy and speed.
+A number of more recent works tried to improve product
+recognition by leveraging on: a) stronger features followed
+by classiﬁcation [4], b) the statistical correlation between
+nearby products on shelves [1, 2] c) additional information
+on the expected product disposition [22] or d) a hierarchical
+multi-stage recognition pipeline [5]. Yet, all these recent
+papers focus on a relatively small-scale problem, i.e. recog-
+nition of a few hundreds different items at most, whilst usu-
+ally several thousands products are on sale in a real shop.
+George et al. [6] address more realistic settings and pro-
+pose a multi-stage system capable of recognizing ∼3400
+different products based on a single model image per prod-
+uct. The authors’ contribution includes releasing the dataset
+employed in their experiments, which we will use in our
+evaluation. More recently, [24] has tackled the problem us-
+ing a standard local feature based recognition pipeline and
+an optimized Hough Transform to detect multiple object in-
+stances and ﬁlter out inconsistent matches, which brings in
+a slight performance improvement.
+Nowadays, CNN-based systems are dominating object
+detection benchmarks and can be subdivided into two main
+families of algorithms based on the number of stages re-
+quired to perform detection. On one hand, we have the
+slower but more accurate two stage detectors [16], which
+decompose object detection into a region proposal followed
+by an independent classiﬁcation for each region. On the
+other hand, fast one stage approaches [15, 9] can perform
+detection and classiﬁcation jointly. A very recent work has
+also addressed the speciﬁc domain of grocery products, so
+as to propose an ad hoc detector [14] that analyzes the im-
+age at multiple scales to produce more meaningful region
+proposals.
+Besides, deploying CNNs to obtain rich image represen-
+tations is an established approach to pursue image search,
+both as a strong off-the-shelf baseline [19] and as a key
+component within more complex pipelines [7]. Inspiration
+for our product recognition approach came from [17, 3]. In
+[17], Schroff et al. train a CNN using triplets of samples
+to create an embedding for face recognition and clustering
+while in [3] Bell et al. rely on a CNN to learn an image
+embedding to recognize the similarity between design prod-
+ucts. Similarly, in the related ﬁeld of fashion items recog-
+nition, relying on learned global descriptor rather than clas-
+siﬁers is an established solution shared among many recent
+works [8, 23, 18].
+3. Proposed Approach
+Figure 2 shows an overview of our proposed pipeline. In
+the ﬁrst step, described subsection 3.1, a CNN (Detector)
+extracts region proposals from the query image. Then, as
+detailed in subsection 3.2, each region proposal is cropped
+from the query image and sent to another CNN (Embedder)
+which computes an ad-hoc image representation. These will
+then be deployed to pursue product recognition through a
+K-NN similarity search in a database of representations pre-
+computed off-line by the Embedder on the reference im-
+ages. Finally, as illustrated in subsection 3.3, we combine
+different strategies to perform a ﬁnal reﬁnement step which
+helps to prune out false detections and disambiguate among
+similar products.
+3.1. Detection
+Given a query image featuring several items displayed in
+a store shelf, the ﬁrst stage of our pipeline aims at obtain-
+ing a set of bounding boxes to be used as region proposals
+in the following recognition stage. Ideally, each bounding
+box should contain exactly one product, ﬁt tightly the visi-
+ble package and provide a conﬁdence score measuring how
+much the detection should be trusted.
+State-of-the-art CNN-based object detectors may fulﬁll
+the above requirements for the product recognition scenario,
+as demonstrated in [14]. Given an input image, these net-
+works can output several accurate bounding boxes, each
+endowed by a conﬁdence and a class prediction. To train
+CNN-based object detectors, such as [15, 9, 16], a large set
+of images annotated with the position of the objects along-
+side with their class labels is needed. However, due to the
+ever-changing nature of the items sold in stores, we do not
+train the Detector to perform predictions at the ﬁne-grained
+class level (i.e., at the level of the individual products), but
+to carry out a product-agnostic item detection. Accordingly,
+the in-store training images for our Detector can be anno-
+tated for training just by drawing bounding-boxes around
+items without specifying the actual product label associated
+with each bounding-box. This formulation makes the cre-
+ation of a suitable training set and the training itself easier
+and faster. Moreover, since the Detector is trained only to
+recognize generic products from everything else it is gen-
+eral enough to be deployable across different stores and
+products. Conversely, training a CNN to directly predict
+bounding boxes as well as product labels would require a
+much more expensive and slow image annotation process
+which should be carried out again and again to keep up with
+changes of the products/packages to be recognized. This
+continuous re-training of the Detector is just not feasible in
+any practical settings.
+3.2. Recognition
+Starting from the candidate regions delivered by the De-
+tector, we perform recognition by means of K-NN similar-
+ity search between a global descriptor computed on each
+candidate region and a database of similar descriptors (one
+for each product) pre-computed off-line on the reference
+images. Recent works (e.g., [19]) have shown that the ac-
+tivations sampled from layers of pre-trained CNNs can be
+used as high quality global image descriptors. [23] extended
+this idea by proposing to train a CNN (i.e., the Embedder)
+to learn a function E : I →D that maps an input image
+i ∈I into a k-dimensional descriptor dk ∈D amenable to
+recognition through K-NN search. Given a set of images
+with associated class labels, the training is performed sam-
+pling triplets of different images, referred to as anchor (ia),
+positive (ip) and negative (in), such that ia and ip depict
+the same class while in belongs to a different one. Given
+a distance function in the descriptor space, d(X, Y), with
+X, Y ∈D, and denoted as E(i) the descriptor computed
+by the the Embedder on image i, the network is trained to
+minimize the so called triplet ranking loss:
+L = max(0, d(E(ia), E(ip)) −d(E(ia), E(in)) + α)
+(1)
+with α a ﬁxed margin to be enforced between the pair of
+distances. Through minimization of this loss, the network
+learns to encode into nearby positions within D the images
+depicting items belonging to the same class, whilst keeping
+items of different classes sufﬁciently well separated.
+We use the same formulation and cast it for the context of
+grocery product recognition where different products corre-
+sponds to different classes (e.g. the two reference images
+of Figure 1-(b) corresponds to different classes and could
+be used as ip and in). Unfortunately, we can not sample
+different images for ia and ip due to available commercial
+datasets featuring just a single exemplar image per prod-
+uct (i.e., per class). Thus, to create the required triplet, at
+each training iteration we randomly pick two products and
+use their reference images as ip and in. Then, we synthe-
+size a new ia from ip by a suitable data augmentation func-
+tion A : I →I, to make it similar to query images (i.e.,
+ia = A(ip))1.
+To perform recognition, ﬁrstly, the Embedder network
+is used to describe each available reference image ir by
+a global descriptor E(ir) and thus create the reference
+database of descriptors associated with the products to be
+recognized. Then, when a query image is processed, the
+same embedding is computed on each of the candidate re-
+gions, ipq, cropped from the query image, iq, so to get
+E(ipq). Finally, for each ipq we compute the distance in the
+embedding space with respect to each reference descriptor,
+denoted as d(E(ipq), E(ir)), in order to sift-out the ﬁrst K-
+NN of E(ipq) in the reference database. These are subject
+to further processing in the ﬁnal reﬁnement step.
+3.3. Reﬁnement
+The aim of the ﬁnal reﬁnement is to remove false detec-
+tions and re-rank the ﬁrst K-NN found in the previous step
+in order to ﬁx possible recognition mistakes.
+Since the initial ranking is obtained comparing descrip-
+tors computed on whole images, a meaningful re-ranking
+of the ﬁrst K-NN may be achieved by looking at peculiar
+image details that may have been neglected while compar-
+ing global descriptors and yet be crucial to differentiate a
+product from others looking very similar. Thus, both the
+Query and each of the ﬁrst K-NN reference images are de-
+scribed by a set of local features F1, F2, ..., Fk, each con-
+sisting in a spatial position (xi, yi) within the image and a
+compact descriptor fi. Given these features, we look for
+similarities between descriptors extracted from query and
+reference images, to compute a set of matches. Matches
+are then weighted based on the distance in the descriptor
+space, d(fi, fj) and a geometric consistency criterion rely-
+ing on the unit-norm vector, ⃗v, from the spatial location of
+a feature to the image center. In particular, given a match,
+Mij = (F q
+i , F r
+j ), between feature i of the query image and
+feature j of the reference image, we compute the following
+weight:
+where · marks scalar products between vectors and ϵ is
+a small number to avoid potential division by zero. Intu-
+itivelly Wij is bigger for matching features which share the
+same relative position with respect to the image center (high
+(⃗v q
+i · ⃗v r
+j )) and have descriptors close in the feature space
+(small d(f q
+i , f r
+j )). Finally, the ﬁrst K-NN are re-ranked ac-
+cording to the sum of the weights Wij computed for the
+matches between the local features. In subsection 4.2 we
+will show how good local features can be obtained at zero
+computational cost as a by-product of our learned global im-
+age descriptor. This reﬁnement technique will be referred to
+as +lf.
+A simple additional reﬁnement step consists in ﬁltering
+out wrong recognitions by the distance ratio criterion [11]
+(i.e., by thresholding the ratio of the distances in feature
+space between the query descriptor and its 1-NN and 2-
+NN). If the ratio is above a threshold, τd, the recognition
+is deemed as ambiguous and discarded. In the following,
+we will denote this reﬁnement technique as +th.
+Finally, as commercial product databases typically pro-
+vide a multilevel classiﬁcation of the items (e.g., at least
+instance and category level), we propose a re-ranking and
+ﬁltering method speciﬁc to the grocery domain where, as
+pointed out by [6], products belonging to the same macro
+category are typically displayed close one to another on the
+shelf. In particular, given the candidate regions extracted
+from the query image and their corresponding sets of K-NN,
+we consider the 1-NN of the region proposals extracted with
+a high conﬁdence (> 0.1) by the Detector in order to ﬁnd
+the main macro category of the image. Then, in case the
+(a)-Customer[6]
+(b)-Management[22]
+Figure 3: In (a) the system should identify at least one in-
+stance for each product type, while in (b) it should ﬁnd and
+correctly localize all the displayed product instances.
+majority of detections votes for the same macro category,
+it is safe to assume that the pictured shelf contains almost
+exclusively items of that category thus ﬁlter the K-NN for
+all candidate regions accordingly. It is worth observing how
+this strategy implicitly leverages on those products easier to
+identify (i.e., the high-conﬁdence detections) to increase the
+chance to correctly recognize the harder ones. We will refer
+to this reﬁnement strategy as to +mc.
+4. Experimental Results
+To validate the performance of our product recognition
+pipeline we take into account two possible use cases dealing
+with different ﬁnal users:
+• Customer: the system should be deployed for a guided
+or partially automated shopping experience (e.g., prod-
+uct localization inside the shop or augmented reality
+overlays or support to visually impaired). As proposed
+in [6], in this use case the goal is to detect at least one
+instance of each visible type of products displayed in a
+shelf picture.
+• Management: the system will be used to partially au-
+tomate the management of a shop (e.g., automatic in-
+ventory and restocking). Here, the goal is to recognize
+all visible product instances displayed in a shelf pic-
+ture.
+4.1. Datasets and Evaluation Metrics
+For our experimental evaluation we rely on the pub-
+licly available Grocery Products dataset [6], which features
+more than 8400 grocery products organized in hierarchi-
+cal classes and with each product described by exactly one
+reference image.
+The dataset contains also 680 in-store
+(query) images that display items belonging to the Food
+subclass of the whole dataset. The annotations released by
+the authors for the query images allow for evaluating perfor-
+mance in the Customer use case, as they consist in bounding
+boxes drawn around spatial clusters of instances of the same
+products. To test our system also in the Management use
+case, we deploy the annotations released by the authors of
+[22], which consist of boxes around each product instance
+for a subset of 70 in-store pictures of the Grocery Products
+dataset. Figure 3 shows examples of the two kinds of anno-
+tations used to evaluate the system in the two different use
+cases.
+To compare our work with previously published results
+we use the metrics proposed by the authors in [6]: mean
+average precision-mAP (the approximation of the area un-
+der the Precision-Recall curve for the detector) and Product
+Recall-PR (average product recall across all the test image).
+As for scenario (a), we report also mean average multi-label
+classiﬁcation accuracy-mAMCA.
+To train the Detector we acquired multiple videos with
+a tablet mounted on a cart facing the shelves and manu-
+ally labeled a subset of sampled frames to create a training
+set of 1247 images. Thus, our videos are acquired in dif-
+ferent stores with respect to those depicted in the Grocery
+Products dataset and feature different products on different
+shelves, vouching for the generalization ability of our sys-
+tem.
+4.2. Implementation Details
+[['Method', 'mAP(%) PR(%) mAMCA(%)'],
+ ['FV+RANSAC[6]', '11.26 23.14 6.41'],
+ ['RF+PM+GA[6]', '23.49 43.13 21.19'],
+ ['FM+HO[24]', '23.71 41.60 32.50'],
+ ['yolo gd', '21.49 47.03 13.34'],
+ ['yolo ld', '27.84 53.17 16.32'],
+ ['yolo ld+th', '30.46 37.88 28.74'],
+ ['yolo ld+lf', '32.34 58.41 17.72'],
+ ['yolo ld+mc', '30.15 55.25 21.09'],
+ ['yolo ld+lf-mc-th (full)', '36.02 57.07 31.57']]
+Table 1:
+Product recognition on the Grocery Products
+dataset in the Customer scenario. Best result highlighted
+in bold. Our proposals (in italic) yields large improvements
+in terms of both mAP and PR with respect to previously
+published results.
+To enrich the dataset and create the anchor images, ia, we
+randomly perform the following augmentation functions A:
+blur by a Gaussian kernel with random σ, random crop, ran-
+dom brightness and saturation changes. This augmentations
+were engineered so to transform the reference images in a
+way that renders them similar to the proposals cropped from
+the query images. The hyper-parameters obtained by cross
+validation for the training process are as follows: α = 0.1
+for the triplet loss, learning rate lr = 0.000001, ADAM op-
+timizer and ﬁne-tuning by 10000 steps with batch size 24.
+We propose a novel kind of local features for the +lf
+reﬁnement: as MAC descriptors are obtained by applying
+a max-pool operation over all the activations of a convo-
+lutional layer, by changing the size and stride of the pool
+operation it is possible to obtain a set of local descriptor
+with the associated location being the center of the pooled
+area reprojected into the original image. By leveraging on
+this intuition, we can obtain in a single forward computation
+both a global descriptor for the initial K-NN search (subsec-
+tion 3.2) as well as a set of local features to be deployed in
+the reﬁnement step (subsection 3.3). For our test we choose
+kernel size equal 16 and stride equals 2 as to have 64 fea-
+tures per reference image.
+4.3. Customer Use Case
+In this sub-section we evaluate the effectiveness of our
+system in the Customer scenario. To measure performance
+we rely on the annotations displayed in Figure 3-(a) and
+score a correct recognition when the product has been cor-
+rectly identiﬁed and its bounding box has a non-empty in-
+tersection with that provided as ground-truth.
+We com-
+pare our method with already published work tested on the
+same dataset: FV+RANSAC (Fisher Vector classiﬁcation
+re-ranked with RANSAC) [6], RF+PM+GA (Category pre-
+diction with Random Forests, dense Pixel Matching and Ge-
+netic Algorithm) [6] and FM+HO (local feature matching
+[['Method', 'mAP(%) PR(%)'],
+ ['FS[22]', '66.37 75.0'],
+ ['yolo gd', '66.95 78.89'],
+ ['yolo ld', '74.32 84.75'],
+ ['yolo ld+th', '75.62 81.55'],
+ ['yolo ld+lf', '76.37 86.56'],
+ ['yolo ld+mc', '74.80 85.28'],
+ ['yolo ld+lf-mc-th (full)', '76.93 85.71']]
+Table 2: Product recognition for Management use case. Our
+proposal highlighted (in italic), best results in bold.
+[['Method', 'mAP(%) PR(%)'],
+ ['FS[22]', '47.32 57.0'],
+ ['yolo gd', '60.17 73.66'],
+ ['yolo ld', '67.88 80.27'],
+ ['yolo ld+th', '69.70 76.01'],
+ ['yolo ld+lf', '70.69 82.83'],
+ ['yolo ld+mc', '69.01 81.55'],
+ ['yolo ld+lf-mc-th (full)', '73.50 82.66']]
+Table 3: Results in the Management use case performing
+recognition against all the items belonging to the Food sub-
+class of the Grocery Products dataset (∼3200). Our pro-
+posals highlighted (in italic), best results in bold.
+Figure 5: Precision-Recall curves for our full pipeline in
+the Management use case. full@180 denotes performing
+recognition on the small reference database of [22] (∼180
+entries), full@3200 against all the products in the Food cat-
+egory of Grocery Products (∼3200).
+4.4. Management Use Case
+The experiments presented in this Section concern the
+Management use case, a task requiring correct recognition
+of all the individual products displayed on shelves. Thus,
+we rely on the annotations shown in Figure 3-(b) and con-
+sider a recognition as correct when the item has been cor-
+rectly recognized and the intersection over union (IoU) be-
+tween the predicted and ground truth bounding boxes is
+higher than 0.5. To the best of our knowledge, the only
+published results on the Grocery Products dataset that deals
+with recognition of all the individual products are reported
+in [22]. However, in [22] the authors address a speciﬁc task
+referred to as Planogram Compliance, which consists in
+checking the compliance between the actual product dis-
+position and the planned one.
+Accordingly, the pipeline
+proposed in [22] includes an initial unconstrained product
+recognition stage, which addresses the same settings as our
+Management use case, followed by a second stage that de-
+ploys the exact knowledge on the planned product dispo-
+sition in order to improve recognition accuracy and detect
+compliance issues (e.g., missing or misplaced products).
+Therefore, we compare our proposal to the most effective
+conﬁguration of the ﬁrst stage of the pipeline presented in
+[22], referred to hereinafter as FS, which is based on match-
+ing BRISK local features[10] followed by Hough Voting
+and pose estimation through RANSAC.
+To compare our pipeline with respect to FS, we use the
+annotations provided by the authors and perform recogni-
+tion against the smaller reference database of 182 products
+used in [22]. The results are reported in Table 2. Firstly, it
+is worth pointing out how, despite the task being inherently
+more difﬁcult than in the Customer use case, we record
+higher recognition performance. We ascribe this mainly to
+the smaller subset of in-store images used for testing, (i.e.,
+(a)
+(b)
+(c)
+Figure 6: Examples of correct product recognitions in query images from Grocery Products.
+5. Qualitative Results
+Figure 6 reports some qualitative results obtained by our
+pipeline. Picture (a) shows the recognition results on an im-
+age taken quite far from the shelf and featuring a lot of dif-
+ferent items; (b) deal with some successful recognitions in a
+close-up query image, where only a few items are visible at
+once. Finally, (c) refers to recognition of products featuring
+deformable and highly reﬂective packages, which are quite
+challenging to recognize due to the appearance of the items
+within the query images turning out signiﬁcantly different
+than in the available reference images. Yet, in (c) our sys-
+tem was able to ﬁnd at least one item for each product type
+(i.e., as required in the Customer use case).
+6. Conclusion
+In this paper we have proposed a fast and effective ap-
+proach to the problem of recognizing grocery products on
+store shelves. Our proposal addresses the task by three main
+steps: class agnostic object detection to identify the individ-
+ual items appearing on a shelf image, recognition through
+K-NN similarity search based on a global image descriptor,
+ﬁnal reﬁnement to further boost performance. All the three
+steps deploy modern deep learning techniques, as we detect
+items by a state-of-the-art CNN (Detector), learn the image
+descriptor by another CNN trained to disentangle the ap-
+pearance of grocery products (Embedder) and extract local
+cues key to reﬁnement as MAC features computed along-
+side with the global embedding.
+The experiments prove that our pipeline compares
+favourably to the state-of-the-art on the public dataset avail-
+able for performance assessment while being remarkably
+fast. Yet, we plan to investigate how to further improve the
+speed at test time (e.g., to enable execution on a low-cost
+and/or mobile device). Purposely, we envisage devising a
+uniﬁed CNN architecture acting as both Detector and Em-
+bedder. Furthermore we are currently investigating on the
+use of generative models (e.g., GANs) to augment the num-
+ber of samples per product to train the Embedder. A gener-
+ative model could also be trained to render reference more
+similar to proposals cropped from query images in order to
+shrink the gap between the training and testing domains.
+References
+[1] S. Advani, B. Smith, Y. Tanabe, K. Irick, M. Cotter, J. Samp-
+son, and V. Narayanan. Visual co-occurrence network: using
+context for large-scale object recognition in retail. In Embed-
+ded Systems For Real-time Multimedia (ESTIMedia), 2015
+13th IEEE Symposium on, pages 1–10. IEEE, 2015.
+[2] I. Baz, E. Yoruk, and M. Cetin.
+Context-aware hybrid
+classiﬁcation system for ﬁne-grained retail product recogni-
+tion. In Image, Video, and Multidimensional Signal Process-
+ing Workshop (IVMSP), 2016 IEEE 12th, pages 1–5. IEEE,
+2016.
+[3] S. Bell and K. Bala. Learning visual similarity for product
+design with convolutional neural networks. ACM Transac-
+tions on Graphics (TOG), 34(4):98, 2015.
+[4] M.
+Cotter,
+S.
+Advani,
+J.
+Sampson,
+K.
+Irick,
+and
+V. Narayanan. A hardware accelerated multilevel visual clas-
+siﬁer for embedded visual-assist systems. In Proceedings of
+the 2014 IEEE/ACM International Conference on Computer-
+Aided Design, pages 96–100. IEEE Press, 2014.
+[5] A. Franco, D. Maltoni, and S. Papi. Grocery product de-
+tection and recognition. Expert Systems with Applications,
+2017.
+[6] M. George and C. Floerkemeier.
+Recognizing products:
+A per-exemplar multi-label image classiﬁcation approach.
+In Computer Vision–ECCV 2014, pages 440–455. Springer,
+2014.
+[7] A. Gordo, J. Almaz´an, J. Revaud, and D. Larlus. Deep image
+retrieval: Learning global representations for image search.
+In European Conference on Computer Vision, pages 241–
+257. Springer, 2016.
+[8] M. Hadi Kiapour, X. Han, S. Lazebnik, A. C. Berg, and T. L.
+Berg. Where to buy it: Matching street clothing photos in
+online shops. In Proceedings of the IEEE International Con-
+ference on Computer Vision, pages 3343–3351, 2015.
+[9] J. Huang, V. Rathod, C. Sun, M. Zhu, A. Korattikara,
+A. Fathi, I. Fischer, Z. Wojna, Y. Song, S. Guadarrama, and
+K. Murphy. Speed/accuracy trade-offs for modern convolu-
+tional object detectors. In 2017 IEEE Conference on Com-
+puter Vision and Pattern Recognition, CVPR 2017, Hon-
+olulu, HI, USA, July 21-26, 2017, pages 3296–3297, 2017.
+[10] S. Leutenegger, M. Chli, and R. Y. Siegwart.
+Brisk: Bi-
+nary robust invariant scalable keypoints. In Computer Vi-
+sion (ICCV), 2011 IEEE International Conference on, pages
+2548–2555. IEEE, 2011.
+[11] D. G. Lowe.
+Distinctive image features from scale-
+invariant keypoints. International journal of computer vi-
+sion, 60(2):91–110, 2004.
+[12] M. Merler, C. Galleguillos, and S. Belongie. Recognizing
+groceries in situ using in vitro training data. In Computer
+Vision and Pattern Recognition, 2007. CVPR’07. IEEE Con-
+ference on, pages 1–8. IEEE, 2007.
+[13] F. Perronnin, Y. Liu, J. S´anchez, and H. Poirier. Large-scale
+image retrieval with compressed ﬁsher vectors. In Computer
+Vision and Pattern Recognition (CVPR), 2010 IEEE Confer-
+ence on, pages 3384–3391. IEEE, 2010.
+[14] S. Qiao, W. Shen, W. Qiu, C. Liu, and A. Yuille. Scalenet:
+Guiding object proposal generation in supermarkets and be-
+yond. In 2017 IEEE International Conference on Computer
+Vision, ICCV, pages 22–29, 2017.
+[15] J. Redmon and A. Farhadi.
+YOLO9000: better, faster,
+stronger. In 2017 IEEE Conference on Computer Vision and
+Pattern Recognition,CVPR 2017, Honolulu, HI, USA, July
+21-26, 2017, pages 6517–6525, 2017.
+[16] S. Ren, K. He, R. Girshick, and J. Sun. Faster r-cnn: Towards
+real-time object detection with region proposal networks. In
+Advances in neural information processing systems, pages
+91–99, 2015.
+[17] F. Schroff, D. Kalenichenko, and J. Philbin. Facenet: A uni-
+ﬁed embedding for face recognition and clustering. In Pro-
+ceedings of the IEEE Conference on Computer Vision and
+Pattern Recognition, pages 815–823, 2015.
+[18] D. Shankar, S. Narumanchi, H. Ananya, P. Kompalli, and
+K. Chaudhury. Deep learning based large scale visual rec-
+ommendation and search for e-commerce.
+arXiv preprint
+arXiv:1703.02344, 2017.
+[19] A. Sharif Razavian, H. Azizpour, J. Sullivan, and S. Carls-
+son. Cnn features off-the-shelf: an astounding baseline for
+recognition. In Proceedings of the IEEE Conference on Com-
+puter Vision and Pattern Recognition Workshops, pages 806–
+813, 2014.
+[20] K. Simonyan and A. Zisserman.
+Very deep convolu-
+tional networks for large-scale image recognition.
+CoRR,
+abs/1409.1556, 2014.
+[21] G. Tolias, R. Sicre, and H. J´egou. Particular object retrieval
+with integral max-pooling of cnn activations. 2016.
+[22] A. Tonioni and L. Di Stefano. Product recognition in store
+shelves as a sub-graph isomorphism problem. In Interna-
+tional Conference on Image Analysis and Processing, pages
+682–693. Springer, 2017.
+[23] J. Wang, Y. Song, T. Leung, C. Rosenberg, J. Wang,
+J. Philbin, B. Chen, and Y. Wu. Learning ﬁne-grained image
+similarity with deep ranking. In Proceedings of the IEEE
+Conference on Computer Vision and Pattern Recognition,
+pages 1386–1393, 2014.
+[24] E. Y¨or¨uk, K. T. ¨Oner, and C. B. Akg¨ul. An efﬁcient hough
+transform for multi-instance object recognition and pose es-
+timation. In Pattern Recognition (ICPR), 2016 23rd Interna-
+tional Conference on, pages 1352–1357. IEEE, 2016.
