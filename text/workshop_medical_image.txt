@@ -1,0 +1,369 @@
+VIETNAM NATIONAL UNIVERSITY
+HO CHI MINH CITY
+UNIVERSITY OF SCIENCE
+
+3-DAY
+Workshop on Medical Imaging
+
+Student: B`ui Ngˆo Quang Minh
+Student ID: 22127261
+
+Assoc. Prof. Masayuki Fukuzawa and Assoc. Prof.
+Panote Siriaraya Faculty of Information and Human
+Sciences, Kyoto Institute of Technology, Japan
+Assoc. Prof. Ly Quoc Ngoc
+
+Ho Chi Minh City, February 21, 2025
+
+Contents
+
+1
+Day 1: Preparation, Orientation, and Introduction to KIT
+2
+1.1
+Welcome and Introductions
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+2
+1.2
+Team Formation
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+2
+1.3
+Overview of Medical Imaging Applications by Prof. Masayuki Fukuzawa
+. . . .
+2
+1.3.1
+Fourier Transform in Medical Imaging
+. . . . . . . . . . . . . . . . . . .
+2
+1.3.2
+Understanding DICOM . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+2
+1.3.3
+Imaging Modalities: CT, MRI, X-Ray, and Ultrasound . . . . . . . . . .
+2
+1.3.4
+Introduction to MRML . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+3
+1.3.5
+Basic Usage of 3D Slicer . . . . . . . . . . . . . . . . . . . . . . . . . . .
+3
+1.4
+Conclusion . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+3
+1.5
+Conclusion . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+4
+
+2
+Day 2: VR Applications and Surface Model Visualization
+4
+2.1
+Student Introductions from HCMUS
+. . . . . . . . . . . . . . . . . . . . . . . .
+4
+2.2
+VR Applications in Medicine by Panote Siriaraya . . . . . . . . . . . . . . . . .
+4
+2.3
+Visualizing Surface Models in 3D Slicer . . . . . . . . . . . . . . . . . . . . . . .
+4
+2.4
+VR Observation with Headsets
+. . . . . . . . . . . . . . . . . . . . . . . . . . .
+4
+2.5
+Conclusion . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+5
+
+3
+Day 3: Image Segmentation and Group Presentations
+5
+3.1
+Student Introductions from HCMUS
+. . . . . . . . . . . . . . . . . . . . . . . .
+5
+3.2
+Practical Image Segmentation by Prof. Masayuki Fukuzawa
+. . . . . . . . . . .
+5
+3.3
+Group Presentations
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+5
+3.4
+Awards and Closing . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+6
+3.5
+Conclusion . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+6
+
+1
+
+1
+Day 1: Preparation, Orientation, and Introduction to
+KIT
+
+The first day of the 3-day Medical Imaging Workshop began with an introductory session
+aimed at preparing participants and orienting them to the tools and concepts that would be
+explored throughout the event. The session was held under the guidance of Professor Masayuki
+Fukuzawa, who provided an engaging overview of medical imaging and its applications. This
+report summarizes the key activities and content covered during the day.
+
+1.1
+Welcome and Introductions
+
+The workshop kicked off with a warm welcome, followed by self-introductions from three
+Japanese students participating in the program. Each student briefly shared their background
+and interest in medical imaging, setting a collaborative tone for the workshop. This was fol-
+lowed by an orientation to the KIT (presumably the ”Kyoto Institute of Technology” or a
+specific imaging toolkit), which served as the foundation for subsequent technical discussions.
+
+1.2
+Team Formation
+
+Following the introductions, participants were organized into small groups to facilitate team-
+work throughout the workshop. This step encouraged interaction among attendees, allowing
+them to leverage diverse skills and perspectives for upcoming practical exercises and discussions.
+
+1.3
+Overview of Medical Imaging Applications by Prof. Masayuki
+Fukuzawa
+
+Professor Masayuki Fukuzawa delivered an insightful lecture on the role of image processing
+in medicine, emphasizing its practical applications and foundational techniques. The following
+topics were covered:
+
+1.3.1
+Fourier Transform in Medical Imaging
+
+The session introduced the Fourier Transform, a mathematical tool used to decompose images
+into their frequency components. Prof. Fukuzawa explained how this technique is essential
+in medical imaging for tasks such as noise reduction, image reconstruction, and enhancing
+diagnostic features in modalities like CT and MRI.
+
+1.3.2
+Understanding DICOM
+
+Next, the professor introduced DICOM (Digital Imaging and Communications in Medicine),
+the standard format for storing and transmitting medical images. He highlighted its importance
+in ensuring interoperability between imaging devices and hospital systems, allowing seamless
+access to patient data across platforms.
+
+1.3.3
+Imaging Modalities: CT, MRI, X-Ray, and Ultrasound
+
+Prof. Fukuzawa provided an in-depth exploration of four key imaging modalities, each with
+distinct principles and applications in image processing:
+
+• X-Ray: A technique using ionizing radiation to visualize dense structures like bones.
+Image processing enhances contrast and reduces noise for better diagnosis of fractures or
+abnormalities.
+
+2
+
+• CT (Computed Tomography): Utilizes multiple X-ray projections to create detailed
+3D images of internal structures. Image processing reconstructs these projections into
+cross-sectional slices, aiding in the detection of tumors or internal injuries.
+
+• MRI (Magnetic Resonance Imaging): Relies on magnetic fields and radio waves to
+image soft tissues with high resolution. Image processing improves tissue differentiation,
+critical for diagnosing brain or muscle conditions.
+
+• Ultrasound (US): Employs sound waves to visualize soft tissues, often used in prenatal
+imaging. Image processing enhances edge detection and reduces speckle noise for clearer
+images.
+
+A comparison between CT and MRI was also presented. CT excels in imaging dense struc-
+tures and is faster, making it ideal for emergency diagnostics, while MRI offers superior soft-
+tissue contrast, essential for detailed neurological or musculoskeletal assessments. Hospitals
+require both machines to address diverse diagnostic needs effectively.
+
+1.3.4
+Introduction to MRML
+
+The session briefly touched on MRML (Medical Reality Markup Language), a data format
+used to represent 3D medical models and scenes. Prof. Fukuzawa noted its role in integrating
+imaging data with visualization tools like 3D Slicer for surgical planning and analysis.
+
+1.3.5
+Basic Usage of 3D Slicer
+
+Participants were introduced to 3D Slicer, an open-source software for visualizing and analyzing
+medical images. Using a dataset of the upper torso (excluding the head), Prof. Fukuzawa
+demonstrated basic functionalities, such as loading DICOM files, adjusting window levels, and
+exploring anatomical sections.
+The session concluded with a Q&A segment addressing the
+following questions:
+
+1. Q1: What organ is easy to be found in the sagittal section? The sagittal section,
+a vertical plane dividing the body into left and right parts, clearly reveals the spinal
+column, making it an easily identifiable structure in this view.
+
+2. Q2: What organ becomes good contrast when you select ‘CT-abdomen’ in
+Window Level editor presets? When selecting the ‘CT-abdomen’ preset, the liver
+exhibits excellent contrast due to its density and vascularity, aiding in the identification
+of lesions or abnormalities.
+
+3. Q3: What is the major difference in T2W and STIR modes?
+In MRI, T2-
+weighted (T2W) imaging highlights fluid-rich tissues (appearing bright), while STIR
+(Short Tau Inversion Recovery) suppresses fat signals, enhancing the visibility of edema or
+inflammation. The key difference lies in fat suppression, which STIR uniquely provides.
+
+1.4
+Conclusion
+
+Day 1 laid a solid foundation for the workshop, blending theoretical insights with hands-on
+exploration.
+Participants left the session with a clearer understanding of medical imaging
+principles and tools, eager to delve deeper in the days ahead.
+
+3
+
+1.5
+Conclusion
+
+Day 1 provided a strong foundation, blending theory with practical exposure, and preparing
+participants for deeper exploration.
+
+2
+Day 2: VR Applications and Surface Model Visualiza-
+tion
+
+The second day shifted focus to advanced visualization techniques, with an emphasis on virtual
+reality (VR) and 3D modeling in medical imaging. The session featured contributions from
+students and an expert presentation, culminating in a hands-on VR experience.
+
+2.1
+Student Introductions from HCMUS
+
+The day began with introductions from students of Ho Chi Minh City University of Science
+(HCMUS). Each student shared their personal information, interests, academic major, and
+individual research projects. This segment highlighted the diversity of expertise among par-
+ticipants, ranging from computer science to biomedical engineering, enriching the workshop’s
+collaborative environment.
+
+2.2
+VR Applications in Medicine by Panote Siriaraya
+
+Panote Siriaraya delivered a compelling presentation on the applications of virtual reality in
+healthcare. He discussed how VR enhances medical training, surgical planning, and patient
+rehabilitation by providing immersive, interactive 3D environments. Examples included VR
+simulations for anatomy education and preoperative visualization of complex structures.
+
+2.3
+Visualizing Surface Models in 3D Slicer
+
+Participants then explored surface model visualization in 3D Slicer using a Brain MRI dataset.
+The hands-on activity focused on generating and analyzing 3D models, followed by a discussion
+addressing the following questions:
+
+1. Q1: What are the pros and cons of Volume Rendering? Pros: Provides a full
+3D view of internal structures with realistic depth, ideal for complex anatomy. Cons:
+Requires significant computational power and can obscure details due to overlapping
+tissues.
+
+2. Q2: What are the pros and cons of Surface Rendering? Pros: Offers clear, defined
+surfaces for specific structures, with faster rendering speeds. Cons: Lacks internal detail
+and may oversimplify complex volumes.
+
+3. Q3: Why is automatic generation of surface models still an ongoing research
+topic? Automatic surface model generation remains challenging due to variability in tis-
+sue boundaries, noise in imaging data, and the need for precise segmentation algorithms,
+all of which require ongoing advancements in machine learning and image processing.
+
+2.4
+VR Observation with Headsets
+
+The session concluded with participants using VR headsets to observe the 3D models created
+in Slicer. This immersive experience allowed them to interact with brain structures in a virtual
+
+4
+
+space, reinforcing the practical applications of VR in medical visualization and providing a
+memorable highlight of the day.
+
+2.5
+Conclusion
+
+Day 2 successfully bridged theoretical insights with cutting-edge technology, offering partici-
+pants a deeper appreciation of VR’s potential in medicine and hands-on skills in 3D visualiza-
+tion.
+
+3
+Day 3: Image Segmentation and Group Presentations
+
+The final day focused on practical image segmentation techniques, guided by Professor Masayuki
+Fukuzawa, and concluded with group presentations and awards, celebrating the participants’
+efforts.
+
+3.1
+Student Introductions from HCMUS
+
+Day 3 opened with additional introductions from HCMUS students, who shared their back-
+grounds, academic pursuits, and research interests, further strengthening the collaborative spirit
+of the workshop.
+
+3.2
+Practical Image Segmentation by Prof. Masayuki Fukuzawa
+
+Professor Fukuzawa led a session on image segmentation, aiming to teach practical techniques
+and highlight the challenges of full automation. Using the CTACardio sample dataset in 3D
+Slicer, participants worked in groups through the following steps:
+
+1. Aorta Segmentation with ‘Fast Marching’ Technique: This method uses a wave-
+front propagation approach to segment the aorta, relying on intensity gradients to define
+boundaries.
+
+2. Aorta Segmentation with ‘Grow from Seeds’ Technique: Participants placed seed
+points manually, allowing the algorithm to expand and segment the aorta based on in-
+tensity thresholds.
+
+3. Optimization of Segmentation Parameters: Groups adjusted parameters like thresh-
+olds and seed placement to refine their models, exploring the balance between accuracy
+and efficiency.
+
+The exercise underscored the difficulties in automating segmentation, such as distinguishing
+the aorta from adjacent structures and handling dataset variability.
+
+3.3
+Group Presentations
+
+Groups prepared slides to present their findings, addressing three questions:
+
+1. Q1: Show us the best aorta model of your group using ‘Grow from Seeds’
+technique.
+
+5
+
+2. Q2: Which parameter was dominant in the ‘Grow from Seeds’ technique to
+determine model quality?
+The seed point placement was often dominant, as it dictates the starting region for growth.
+However, the threshold value was equally critical, controlling the boundary expansion and
+preventing over-segmentation into adjacent tissues.
+
+3. Q3: What is the biggest challenge in automating aorta segmentation? Is it
+possible with modern AI techniques?
+The primary challenge is accurately identifying the aorta amidst similar-intensity struc-
+tures, often leading to errors like segmenting the wrong organ.
+Modern AI, such as
+deep learning, shows promise by learning complex patterns, but full automation remains
+limited by dataset quality and generalization across patients.
+
+3.4
+Awards and Closing
+
+The workshop concluded with a small awards ceremony recognizing outstanding group pre-
+sentations. Group 2, my team, received commendation for our commendable effort, reflecting
+our dedication despite challenges. The ceremony celebrated the collective achievements of all
+participants, marking a rewarding end to the 3-day event.
+
+3.5
+Conclusion
+
+Day 3 provided hands-on experience in segmentation, deepened understanding of its challenges,
+and fostered teamwork through presentations, leaving participants with practical skills and
+insights into medical imaging advancements.
+
+6

@@ -1,6 +1,5 @@
 import fitz  # PyMuPDF
 import os
-import pdfplumber
 from pprint import pformat
 import re
 
@@ -40,63 +39,12 @@ def normalize_table_to_list(raw_table, min_nonempty_cells=1):
     
     return pformat(normalized_rows)
 
-def is_table_empty(table):
-    """
-    Kiểm tra bảng rỗng: nếu tất cả cell là '' hoặc None -> True
-    """
-    for row in table:
-        for cell in row:
-            if cell not in (None, ''):
-                return False
-    return True
-
-# with pdfplumber.open("/Users/minh10hd/Downloads/rag/research/1810.01733v3.pdf") as pdf:
-#     for page_number, page in enumerate(pdf.pages, start=1):
-#         tables = page.extract_tables()
-
-#         # print(f"Page {page_number}: {len(tables)} tables found")
-
-#         for idx, table in enumerate(tables):
-#             if is_table_empty(table):
-#                 # print(f"Page {page_number} Table {idx+1} → bỏ qua (rỗng)")
-#                 continue
-#             # print(f"\nTable {idx+1}:")
-#             for row in table:
-#                 # print(row)
-#                 ...
-
 def bbox_overlap(b1, b2, tol=3):
     # "tol" để cho phép block chạm nhẹ vào bảng
     x0, y0, x1, y1 = b1
     a0, a1, a2, a3 = b2
     return not (x1 < a0 - tol or x0 > a2 + tol or y1 < a1 - tol or y0 > a3 + tol)
 
-def detect_all_figure_bboxes(page):
-    raw = page.get_text("rawdict")
-    bboxes = []
-
-    # 1) ảnh
-    # for b in raw["blocks"]:
-    #     if b["type"] == 1:
-    #         bboxes.append(tuple(b["bbox"]))
-
-    # 2) vector graphics (biểu đồ)
-    for b in raw["blocks"]:
-        if b["type"] == 4:
-            bboxes.append(tuple(b["bbox"]))
-
-    return bboxes
-
-
-
-
-
-def normalize_table(raw_table):
-    """Convert list-of-lists to your preferred format ['a','b'] per row."""
-    out = []
-    for row in raw_table:
-        out.append(str(row))
-    return "\n".join(out)
 
 def detect_vector_figures(page):
     """
@@ -109,11 +57,95 @@ def detect_vector_figures(page):
         vector_bboxes.append((bbox.x0, bbox.y0, bbox.x1, bbox.y1))
     return vector_bboxes
 
+# def clean_text(text):
+#     text = re.sub(r'\n+', '\n', text)             # remove multiple newlines
+#     text = re.sub(r'\s+', ' ', text)              # compress whitespace
+#     text = text.replace("\x00", "")               # remove null chars
+#     return text.strip()
+
 def clean_text(text):
-    text = re.sub(r'\n+', '\n', text)             # remove multiple newlines
-    # text = re.sub(r'\s+', ' ', text)              # compress whitespace
-    text = text.replace("\x00", "")               # remove null chars
+    text = text.replace("\x00", "")
+    text = re.sub(r'\n{3,}', '\n\n', text)   # giữ đoạn văn
+    text = re.sub(r'[ \t]+', ' ', text)      # chỉ xóa space dư
     return text.strip()
+
+
+SECTION_PATTERN = re.compile(
+    r'^(\d+\.|[IVX]+\.)?\s*'
+    r'(ABSTRACT|INTRODUCTION|RELATED WORK|PROPOSED (METHOD|APPROACH)|METHODS|'
+    r'METHODOLOGY|EXPERIMENTS?|EXPERIMENT DESIGN|ACCURACY ASSESSMENT|EXPERIMENTAL RESULTS?|RESULTS?|RESULTS AND DISCUSSION|'
+    r'DISCUSSION|CONCLUSION|CONCLUSIONS|REFERENCES)\s*$',
+    re.I
+)
+
+
+def split_by_sections(text):
+    lines = text.split("\n")
+    sections = []
+    current_section = "unknown"
+    buffer = ""
+
+    for line in lines:
+        l = line.strip()
+
+        if SECTION_PATTERN.match(l):
+            if buffer.strip():
+                sections.append({
+                    "section": current_section,
+                    "text": buffer.strip()
+                })
+
+            current_section = l
+            buffer = ""
+        else:
+            buffer += line + "\n"
+
+    if buffer.strip():
+        sections.append({
+            "section": current_section,
+            "text": buffer.strip()
+        })
+
+    return sections
+
+
+def chunk_for_rag(sections, pdf_name,
+                  chunk_size=500,
+                  chunk_overlap=100):
+    """
+    sections = output của split_by_sections()
+    return: list các chunks để đưa vào embedding
+    """
+
+    chunks = []
+
+    for sec in sections:
+        section_name = sec["section"]
+        text = sec["text"]
+
+        words = text.split()
+        step = chunk_size - chunk_overlap
+
+        for i in range(0, len(words), step):
+            chunk_words = words[i:i + chunk_size]
+            chunk_text = " ".join(chunk_words)
+
+            chunk_with_meta = f"""
+                            SOURCE: {pdf_name}
+                            SECTION: {section_name}
+
+                            {chunk_text}
+                            """.strip()
+
+            chunks.append({
+                "source": pdf_name,
+                "section": section_name,
+                "text": chunk_with_meta
+            })
+
+    return chunks
+
+
 
 def extract_text_from_pdf(path, save_path):
     pdf_filename = os.path.basename(path)
@@ -137,7 +169,7 @@ def extract_text_from_pdf(path, save_path):
         # 2) lấy figure (ảnh + vector + caption)
         # figure_bboxes = detect_all_figure_bboxes(page)
         figure_bboxes = detect_vector_figures(page)
-        print(figure_bboxes)
+        # print(figure_bboxes)
 
         # 3) lấy text block
         blocks = page.get_text("blocks")  # (x0, y0, x1, y1, text, block_no)
@@ -174,26 +206,88 @@ def extract_text_from_pdf(path, save_path):
         print(f"✅ Đã lưu văn bản thành công vào: {output_path}")
     except Exception as e:
         print(f"❌ Lỗi khi lưu file: {e}")
-    return output_path
+    return final_text
 
-print(extract_text_from_pdf("/Users/minh10hd/Downloads/rag/research/1810.01733v3.pdf", "/Users/minh10hd/Downloads/rag/text/"))
-# === Ví dụ sử dụng ===
-# raw_table_example = [
-#     ['Method', 'mAP(%) PR(%)'],
-#     ['FS[22]', '66.37 75.0'],
-#     ['yolo gd\nyolo ld\nyolo ld+th\nyolo ld+lf\nyolo ld+mc', '66.95 78.89\n74.32 84.75\n75.62 81.55\n76.37 86.56\n74.80 85.28'],
-#     ['yolo ld+lf-mc-th(full)', '76.93 85.71'],
-# ]
+import fitz
+import re
 
-# normalized_list = normalize_table_to_list(raw_table_example)
-# for row in normalized_list:
-#     print(row)
+def extract_title_from_pdf(pdf_path):
+    doc = fitz.open(pdf_path)
+    page = doc[0]
 
-# doc = fitz.open("/Users/minh10hd/Downloads/rag/research/1810.01733v3.pdf")
-# for page_num in range(len(doc)):
-#     page = doc[page_num]
-#     paths = page.get_drawings() # Extract existing drawings
+    blocks = page.get_text("dict")["blocks"]
+
+    title_candidates = []
+
+    for block in blocks:
+        if block["type"] != 0:
+            continue
+
+        for line in block["lines"]:
+            for span in line["spans"]:
+                text = span["text"].strip()
+
+                if len(text) < 10:
+                    continue
+
+                # ❌ Bỏ dòng arXiv
+                if "arxiv" in text.lower():
+                    continue
+
+                # ❌ Bỏ email, url, ngày tháng
+                if re.search(r"\d{1,2}\s+\w+\s+\d{4}", text):
+                    continue
+
+                if "http" in text.lower():
+                    continue
+
+                title_candidates.append((span["size"], text))
+
+    if not title_candidates:
+        return "untitled"
+
+    # Sắp theo font size giảm dần, text dài hơn được ưu tiên
+    title_candidates = sorted(
+        title_candidates,
+        key=lambda x: (x[0], len(x[1])),
+        reverse=True
+    )
+
+    return title_candidates[0][1]
+
+
+def get_all_pdfs(root_folder):
+    pdfs = []
+    for root, dirs, files in os.walk(root_folder):
+        for file in files:
+            if file.lower().endswith(".pdf"):
+                pdfs.append(os.path.join(root, file))
+    return pdfs
+
+
+# ví dụ
+files = get_all_pdfs("research")
+print(len(files))
+
+save_path = "/Users/minh10hd/Downloads/rag/text/"
+
+for file in files:
+
+    text = extract_text_from_pdf(file, save_path)
+    sections = split_by_sections(text)
+
+    print(len(sections))
+    for s in sections:
+        print(s["section"])
+
+    name = extract_title_from_pdf("/Users/minh10hd/Downloads/rag/research/1810.01733v3.pdf")
+    chunks = chunk_for_rag(sections, name)
+print(chunks[0]["text"])
     
-#     print(f"Page {page_num+1} contains {len(paths)} vector graphic paths.")
-    
-# print(pformat(raw_table_example))
+
+# text = extract_text_from_pdf("/Users/minh10hd/Downloads/rag/text/1810.01733v3.txt", save_path)
+# sections = split_by_sections(text)
+
+# # print(len(sections))
+# for s in sections:
+#     print(s["section"])
