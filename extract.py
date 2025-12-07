@@ -70,11 +70,20 @@ def clean_text(text):
     return text.strip()
 
 
+# SECTION_PATTERN = re.compile(
+#     r'^(\d+\.|[IVX]+\.)?\s*'
+#     r'(ABSTRACT|INTRODUCTION|RELATED WORK|PROPOSED (METHOD|APPROACH)|METHODS|'
+#     r'METHODOLOGY|EXPERIMENTS?|EXPERIMENT DESIGN|ACCURACY ASSESSMENT|EXPERIMENTAL RESULTS?|RESULTS?|RESULTS AND DISCUSSION|'
+#     r'DISCUSSION|CONCLUSION|CONCLUSIONS|REFERENCES)\s*$',
+#     re.I
+# )
+
 SECTION_PATTERN = re.compile(
-    r'^(\d+\.|[IVX]+\.)?\s*'
-    r'(ABSTRACT|INTRODUCTION|RELATED WORK|PROPOSED (METHOD|APPROACH)|METHODS|'
-    r'METHODOLOGY|EXPERIMENTS?|EXPERIMENT DESIGN|ACCURACY ASSESSMENT|EXPERIMENTAL RESULTS?|RESULTS?|RESULTS AND DISCUSSION|'
-    r'DISCUSSION|CONCLUSION|CONCLUSIONS|REFERENCES)\s*$',
+    r'^((\d+(\.\d+)*)|[IVX]+)?\.?\s*'
+    r'(ABSTRACT|INTRODUCTION|RELATED WORK|PROPOSED (METHOD|APPROACH)|'
+    r'METHODS?|METHODOLOGY|EXPERIMENTS?|EXPERIMENT DESIGN( AND ACCURACY ASSESSMENT)?|'
+    r'ACCURACY ASSESSMENT|EXPERIMENTAL RESULTS?|RESULTS?( AND DISCUSSION)?|'
+    r'DISCUSSION|CONCLUSIONS?|REFERENCES)$',
     re.I
 )
 
@@ -111,31 +120,49 @@ def split_by_sections(text):
 
 def chunk_for_rag(sections, pdf_name,
                   chunk_size=500,
-                  chunk_overlap=100):
-    """
-    sections = output của split_by_sections()
-    return: list các chunks để đưa vào embedding
-    """
+                  chunk_overlap=100,
+                  min_chunk_words=30):
 
     chunks = []
 
     for sec in sections:
         section_name = sec["section"]
-        text = sec["text"]
+        text = sec["text"].strip()
+
+        if not text:
+            continue
 
         words = text.split()
         step = chunk_size - chunk_overlap
 
+        # Nếu section quá ngắn → giữ nguyên 1 chunk
+        if len(words) <= chunk_size:
+            chunk_with_meta = f"""SOURCE: {pdf_name}
+SECTION: {section_name}
+
+{text}""".strip()
+
+            chunks.append({
+                "source": pdf_name,
+                "section": section_name,
+                "text": chunk_with_meta
+            })
+            continue
+
+        # Nếu section dài → chunk chuẩn
         for i in range(0, len(words), step):
             chunk_words = words[i:i + chunk_size]
+
+            # bỏ chunk quá nhỏ (thường là phần đuôi rác)
+            if len(chunk_words) < min_chunk_words:
+                continue
+
             chunk_text = " ".join(chunk_words)
 
-            chunk_with_meta = f"""
-                            SOURCE: {pdf_name}
-                            SECTION: {section_name}
+            chunk_with_meta = f"""SOURCE: {pdf_name}
+SECTION: {section_name}
 
-                            {chunk_text}
-                            """.strip()
+{chunk_text}""".strip()
 
             chunks.append({
                 "source": pdf_name,
@@ -144,6 +171,7 @@ def chunk_for_rag(sections, pdf_name,
             })
 
     return chunks
+
 
 
 
@@ -183,8 +211,12 @@ def extract_text_from_pdf(path, save_path):
             replaced = False
             for tbl in table_blocks:
                 if bbox_overlap(block_bbox, tbl["bbox"]):
-                    if not tbl["used"]:
-                        final_text += tbl["text"] + "\n"
+                    text = tbl["text"]
+
+                    if text is not None and text.strip() != "":
+                        final_text += text.strip() + "\n"
+                    # if not tbl["used"]:
+                    #     final_text += tbl["text"] + "\n"
                         tbl["used"] = True
                     replaced = True
                     break
@@ -272,7 +304,7 @@ print(len(files))
 save_path = "/Users/minh10hd/Downloads/rag/text/"
 
 for file in files:
-
+    print(file)
     text = extract_text_from_pdf(file, save_path)
     sections = split_by_sections(text)
 
@@ -280,14 +312,54 @@ for file in files:
     for s in sections:
         print(s["section"])
 
-    name = extract_title_from_pdf("/Users/minh10hd/Downloads/rag/research/1810.01733v3.pdf")
+    name = extract_title_from_pdf(file)
     chunks = chunk_for_rag(sections, name)
-print(chunks[0]["text"])
-    
+os.environ["TMPDIR"] = "/tmp"
+os.environ["TEMP"] = "/tmp"
+os.environ["TMP"] = "/tmp"
+import pickle
 
-# text = extract_text_from_pdf("/Users/minh10hd/Downloads/rag/text/1810.01733v3.txt", save_path)
+with open("metadata.pkl", "wb") as f:
+    pickle.dump(chunks, f)   # chunks trả về từ chunk_for_rag
+
+from sentence_transformers import SentenceTransformer
+
+model = SentenceTransformer("all-mpnet-base-v2")
+
+
+print("Số chunks:", len(chunks))
+texts = [c["text"] for c in chunks]
+metadatas = [{
+    "source": c["source"],
+    "section": c["section"]
+} for c in chunks]
+
+embeddings = model.encode(
+    texts,
+    show_progress_bar=True,
+    batch_size=64
+)
+
+print("Shape:", embeddings.shape)  
+
+# text = extract_text_from_pdf("/Users/minh10hd/Downloads/rag/research/chưa đọc/random forest.pdf", save_path)
 # sections = split_by_sections(text)
 
-# # print(len(sections))
+# print(len(sections))
 # for s in sections:
 #     print(s["section"])
+
+# name = extract_title_from_pdf("/Users/minh10hd/Downloads/rag/research/chưa đọc/random forest.pdf")
+# print(name)
+# chunks = chunk_for_rag(sections, name)
+
+import faiss
+import numpy as np
+
+dim = 768
+index = faiss.IndexFlatL2(dim)
+
+index.add(embeddings)        # vectors: numpy array shape (n, dim)
+# D, I = index.search(q, 5)  # query top-5
+faiss.write_index(index, "papers.index")
+
