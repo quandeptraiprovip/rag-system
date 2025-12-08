@@ -27,3 +27,40 @@ This project provides a robust workflow to **extract text from scientific PDF pa
   - Returns clean text ready for ingestion into a RAG system.
 
 ---
+
+## Tokenizer
+In this project, Sentence Transformers are used to convert text chunks into dense vector representations (embeddings) for RAG. Although Sentence Transformers do not perform tokenization in the traditional NLP sense (like splitting text into subwords), they internally handle tokenization and encoding, then transform entire sentences or paragraphs into fixed-size vectors in a semantic space.
+
+- **Why Sentence Transformer?**
+  - Captures semantic meaning, not just keywords
+  - Better for semantic search and retrieval tasks
+  - Optimized for cosine / dot-product similarity
+  - Easy to integrate with FAISS / vector databases
+- **Models for RAG**
+  |Model|Dim|Characteristics|
+  |:---|:---|:---|
+  |all-MiniLM-L6-v2|384|Fast, Light, The most common|
+  |all-MiniLM-L12-v2|384|More accuracy then L6|
+  |all-mpnet-base-v2|768|Much more accuracy but slow|
+
+---
+
+## Vector database
+- **HNSW (Hierarchical Nevigable Small World)**
+---
+
+## Retrieval
+- **Query Classification**
+- **Hybrid Search**
+- **Reranking**
+---
+
+## Techniques
+- **Query Transformation**
+- **Context Optimization**
+---
+
+## Evaluation
+---
+
+
