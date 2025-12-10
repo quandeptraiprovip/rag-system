@@ -46,7 +46,16 @@ In this project, Sentence Transformers are used to convert text chunks into dens
 ---
 
 ## Vector database
-- **HNSW (Hierarchical Nevigable Small World)**
+- **HNSW (Hierarchical Nevigable Small World)**: is a multi-layer graph structure used for fast Approximate Nearest Neighbor (ANN) search.
+  - It's one of the fastest and most accurate ANN algorithms and is widely used in modern vector databases (Faiss, Qdrant, Milvus, Pinecone, Weaviate).
+  - HNSW builds a multi-level small-world graph. Upper layers allow fast navigation, and lower layers improve precision. Search starts from the top and descends greedily toward the nearest vector.
+- **Faiss (Facebook AI Similarity Search)*:* is a high-performance library for dense vector similarity search and clustering, developed by Meta AI.
+
+|VectorDB|Note|
+|:--|:--|
+|Pinecone|Managed, easy to start|
+|Weaviate|great hybrid search, open source|
+|Milvus|High scale, popular in interprise|
 ---
 
 ## Retrieval
