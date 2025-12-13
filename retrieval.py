@@ -41,14 +41,11 @@ def retrieve(query, model, index, chunks, top_k=5):
     return results
 
 
-question = "How does the proposed method improve accuracy?"
+# question = "structure of resnet?"
 
-query_embedding = model.encode([question]).astype("float32")
 
-k = 5  # top 5 relevant chunks
-distances, indices = index.search(query_embedding, k)
+# res = retrieve(question, model, index, chunks)
 
-for idx in indices[0]:
-    print(chunks[idx]["section"])
-    print(chunks[idx]["text"][:300])
-    print("-" * 30)
+# for r in res:
+#     print(r["source"])
+
