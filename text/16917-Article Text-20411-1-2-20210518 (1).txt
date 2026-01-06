@@ -1,0 +1,2611 @@
+HiGAN: Handwriting Imitation Conditioned on Arbitrary-Length Texts and
+Disentangled Styles
+
+Ji Gan, Weiqiang Wang *
+
+School of Computer Science and Technology, University of Chinese Academy of Sciences
+ganji15@mails.ucas.ac.cn, wqwang@ucas.ac.cn
+
+Abstract
+
+Given limited handwriting scripts, humans can easily visual-
+ize (or imagine) what the handwritten words/texts would look
+like with other arbitrary textual contents. Moreover, a person
+also is able to imitate the handwriting styles of provided ref-
+erence samples. Humans can do such hallucinations, perhaps
+because they can learn to disentangle the calligraphic styles
+and textual contents from given handwriting scripts. How-
+ever, computers cannot study to do such ﬂexible handwriting
+imitation with existing techniques. In this paper, we propose
+a novel handwriting imitation generative adversarial network
+(HiGAN) to mimic such hallucinations. Speciﬁcally, HiGAN
+can generate variable-length handwritten words/texts condi-
+tioned on arbitrary textual contents, which are unconstrained
+to any predeﬁned corpus or out-of-vocabulary words. More-
+over, HiGAN can ﬂexibly control the handwriting styles of
+synthetic images by disentangling calligraphic styles from the
+reference samples. Experiments on handwriting benchmarks
+validate our superiority in terms of visual quality and scalabil-
+ity when comparing to the state-of-the-art methods for hand-
+written word/text synthesis. The code and pre-trained models
+can be found at https://github.com/ganji15/HiGAN.
+
+Introduction
+Handwriting imitation aims at (1) synthesizing diverse, re-
+alistic handwriting images conditioned on arbitrary textual
+contents and (2) imitating the calligraphic styles (e.g., the
+text skew, slant, roundness, ligature, and stroke-width) of
+reference handwriting samples. As shown in Fig. 1, humans
+can quickly learn such handwriting imitation with the abil-
+ity of hallucination. Explicitly speaking, after learning from
+limited handwriting documentations, a person can visualize
+(or imagine) what the handwritten words/texts would look
+like conditioned on other arbitrary textual contents. Further-
+more, providing a reference handwriting sample, a person
+can also hallucinate new handwriting images of similar cal-
+ligraphic styles but with different textual contents. Humans
+can do such hallucinations, perhaps because they can learn to
+disentangle the calligraphic styles and textual contents from
+provided handwriting samples. If we can teach computers to
+mimic this process, they possibly are capable of imitating
+realistic handwriting as well as humans.
+
+[['"brilliantly"\n"brilliantly"\n(a) Imitating styles',
+ '"latent" "behind"\n(b) Imagining OOV words'],
+ ['', '"the long text is abcdefghijklmnopq'],
+ ['', '(c) Hallucinating long texts']]
+[['"brilliantly"\n"brilliantly"\n(a) Imitating styles',
+ '"latent" "behind"\n(b) Imagining OOV words'],
+ ['', '"the long text is abcdefghijklmnopq'],
+ ['', '(c) Hallucinating long texts']]
+[['"brilliantly"\n"brilliantly"\n(a) Imitating styles',
+ '"latent" "behind"\n(b) Imagining OOV words'],
+ ['', '"the long text is abcdefghijklmnopq'],
+ ['', '(c) Hallucinating long texts']]
+[['"brilliantly"\n"brilliantly"\n(a) Imitating styles',
+ '"latent" "behind"\n(b) Imagining OOV words'],
+ ['', '"the long text is abcdefghijklmnopq'],
+ ['', '(c) Hallucinating long texts']]
+[['"brilliantly"\n"brilliantly"\n(a) Imitating styles',
+ '"latent" "behind"\n(b) Imagining OOV words'],
+ ['', '"the long text is abcdefghijklmnopq'],
+ ['', '(c) Hallucinating long texts']]
+[['"brilliantly"\n"brilliantly"\n(a) Imitating styles',
+ '"latent" "behind"\n(b) Imagining OOV words'],
+ ['', '"the long text is abcdefghijklmnopq'],
+ ['', '(c) Hallucinating long texts']]
+[['"brilliantly"\n"brilliantly"\n(a) Imitating styles',
+ '"latent" "behind"\n(b) Imagining OOV words'],
+ ['', '"the long text is abcdefghijklmnopq'],
+ ['', '(c) Hallucinating long texts']]
+Figure 1: Humans can easily learn the handwriting imitation
+with the ability of hallucination.
+
+With the invention of variational auto-encoders (VAEs)
+(Kingma and Welling 2013) and generative adversarial net-
+works (GANs) (Ian Goodfellow 2014), it has witnessed sig-
+niﬁcant progress in the ﬁeld of image synthesis in recent
+years. Combining conceptions of VAEs and GANs, com-
+puters nowadays can not only synthesize realistic images
+but also perform image-to-image translation between differ-
+ent visual domains (Zhu et al. 2017; Andrew Brock and Si-
+monyan 2019; Yunjey Choi and Choo 2018; Yunjey Choi
+2020; Hsin-Ying Lee and Yang 2018). However, a signiﬁ-
+cant observation is that VAEs/GANs for handwriting syn-
+thesis mainly focus on generating ﬁxed-sized images of iso-
+lated digits/characters. On the contrary, very few works have
+explored to synthesize handwritten words/texts with GANs.
+Particularly, we demonstrate that handwritten word/text syn-
+thesis is much more challenging than isolated character gen-
+eration, since it faces the following three difﬁculties:
+
+• Variable-Sized Images. The model must be capable of
+synthesizing variable-sized images, since handwriting im-
+ages of variable-length texts should have different sizes
+(e.g., text images typically are longer than word images).
+
+• Arbitrary Words/Texts. Given the language alphabet,
+the model should generate readable handwriting images
+conditioned on arbitrary texts that unconstrained to any
+predeﬁned corpus or out-of-vocabulary (OOV) words.
+
+The Thirty-Fifth AAAI Conference on Artificial Intelligence (AAAI-21)
+
+7484
+
+Desired Styles
+×
+√
+√
+
+Short Words
+√
+√
+√
+
+Table 1: Feature-by-feature comparison of GANs for hand-
+written word/text generation. “Random Styles” denotes
+whether models can generate images by randomly sampling
+styles from a prior distribution; “Desired Styles” indicates
+whether models can imitate handwriting styles of reference
+images; and “Short Words” & “Long Texts“ denotes whether
+models can synthesize short words or long texts respectively.
+
+• Style Imitation. The model should learn to disentangle
+calligraphic styles from variable-sized reference images,
+and then imitate the extracted styles for synthetic images.
+Overall, those characteristics make handwritten text genera-
+tion different from conventional image synthesis.
+Recently, several efforts have been made to synthe-
+size handwritten word/text images with GANs; neverthe-
+less, none of them has successfully overcome the afore-
+mentioned difﬁculties all at once. Speciﬁcally, the ﬁrst at-
+tempt (Eloi Alonso and Messina 2019) is to generate ﬁxed-
+sized handwritten word images conditioned on the learned
+embeddings of entire words. Hence, their method can-
+not generate either variable-length images or high-quality
+handwritten OOV words. One improved work is Scrabble-
+GAN (Sharon Fogel and Litman 2020), which can synthe-
+size long handwritten texts by concatenating all letter-tokens
+together. However, both methods cannot learn to imitate the
+calligraphic styles of reference samples. Another improved
+work is GANwriting (Lei Kang 2020), which can gener-
+ate handwritten words conditioned on calligraphic style fea-
+tures. Still, GANwriting cannot generate long handwritten
+words/texts (with more than ten letters) due to its ﬂaws in ar-
+chitecture design. What is more, GANwriting requires mul-
+tiple reference images to extract reliable styles for high-
+quality synthesis, thus exhibiting low visual quality in in-
+ference if only one reference sample is provided at test time.
+Summarizing, the state-of-the-art GANs have not entirely
+solved the handwritten word/text synthesis yet.
+In this paper, we propose a novel handwriting imita-
+tion GAN (HiGAN). The proposed method can generate
+variable-length handwritten words/texts conditioned on ar-
+bitrary textual contents, which are unconstrained to any pre-
+deﬁned corpus or out-of-vocabulary words. Moreover, Hi-
+GAN can ﬂexibly control the handwriting styles of synthetic
+images, which is achieved by disentangling the calligraphic
+styles from reference samples. Speciﬁcally, Table 1 shows
+the feature-by-feature comparison between HiGAN and the
+competing GANs. Our contribution is twofold:
+• We propose a novel HiGAN for handwriting imitation,
+which can (1) generate variable-sized handwriting images
+condition on arbitrary texts and (2) imitate calligraphic
+styles that disentangled from the reference samples.
+
+• Experiments on handwriting benchmarks validate our su-
+periority in terms of visual quality and scalability com-
+pared with the state-of-the-art GANs for handwritten
+word/text synthesis.
+
+Related Work
+
+Teaching machines to synthesize realistic handwriting is an
+interesting topic. Although it has witnessed many signif-
+icant achievements in recent years, handwriting imitation
+remains challenging for artiﬁcial intelligence. Traditional
+handwriting synthesis methods (Tom S. F. Haines and Bros-
+tow 2016; Lin and Wan 2007; Achint Oommen Thomas and
+Govindaraju 2009) typically involve expensive manual inter-
+ventions, which require the strong domain-speciﬁc knowl-
+edge aimed at clipping isolated characters, rendering back-
+grounds and ligatures among strokes.
+With the great success of deep learning in machine learn-
+ing, artiﬁcial neural networks have gradually been intro-
+duced to handwriting synthesis. The ﬁrst relevant work is
+that Graves (2013) proposed to synthesize online hand-
+writing trajectories with recurrent neural networks (RNNs).
+However, such recurrent-based model not only suffers from
+the difﬁculty of learning long-range dependencies, but it also
+is time-consuming due to its computation mechanism. More
+lethally, it may be challenging to collect massive trajecto-
+ries in practical scenarios, since the unique equipment (e.g.,
+digital pens) is required to record the sequential points. In
+contrast, it is much easier to obtain a mass of handwriting
+images in our real lives and the internet. Thus, our primary
+objective in this paper is to synthesize handwriting images.
+With the advances of generative models, handwritten
+character synthesis has been fully explored in recent years.
+Speciﬁcally, both GANs (Ian Goodfellow 2014) and VAEs
+(Kingma and Welling 2013) were proposed to synthesize re-
+alistic handwritten digits. Moreover, Mirza et al. (2014) fur-
+ther proposed conditional GANs (cGANs) for guiding ma-
+chines to generate digits conditioned on class labels. Fur-
+thermore, Radford et al. (2013) proposed deep convolutional
+GANs (DCGANs) to synthesize more realistic images by re-
+designing the structures of GANs with deep convolutional
+networks. Despite digits, Chang et al. (2018) also proposed
+to utilize CycleGANs (Jun-Yan Zhu 2017) for synthesizing
+isolated Chinese characters with thousands of categories.
+Heretofore, most existing GANs focus on ﬁxed-sized
+isolated character synthesis, yet only a few efforts have
+been made for handwritten word/text generation. Speciﬁ-
+cally, Alonso et al. (2019) ﬁrst proposed to generate ﬁxed-
+sized handwritten word images using GANs while produc-
+ing poor visual quality. Furthermore, Fogel et al. (2020) pro-
+posed ScrabbleGAN to synthesize variable-length handwrit-
+ten texts with randomly sampled styles. However, a signiﬁ-
+cant shortcoming is that they cannot imitate the calligraphic
+styles of reference images. More recently, Kang et al. (2020)
+proposed GANwriting, which can generate short handwrit-
+ten words conditioned on provided style images. However,
+their method is limited to synthesizing short handwritten
+words (with less than ten letters), and thus it cannot gen-
+erate long handwritten texts. Moreover, it exhibits low vi-
+
+7485
+
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+[['CTC\n'
+ 'N(σ)\n'
+ 'G D "have" e Adv\n'
+ 'v\n'
+ 'a\n'
+ 'R h\n'
+ 'I\n'
+ 'E\n'
+ 'CE Writer ID\n'
+ '(a) Training with disentangled styles.',
+ 'CTC\n'
+ 'N(σ)\n'
+ 'G D "what" t Adv\n'
+ 'a\n'
+ 'h\n'
+ 'R\n'
+ 'w\n'
+ 'N(s)\n'
+ 'E\n'
+ 'L1\n'
+ '(b) Training with random styles.',
+ '"content"\nc o n t e n t\nE N(σ)\nG\n(c) Testing with disentangled styles.'],
+ ['', '', '"content"'],
+ ['', '', 'c o n t e n t'],
+ ['', '', 'N(s)'],
+ ['', '', 'N(σ)'],
+ ['', '', 'G'],
+ ['', '', '(d) Testing with random styles.'],
+ ['Writer', '', ''],
+ ['G Generator E Encoder R Recognizer I', '', ''],
+ ['Identifier', '', ''],
+ ['Adversarial Cross CTC L1', '', ''],
+ ['Adv CE CTC L1', '', ''],
+ ['Loss Entropy Loss Norm', '', ''],
+ ['Noise Style Character Text', '', ''],
+ ['N(*) Distribution Code c Filter Map Map', '', '']]
+Figure 2: The overview of HiGAN. During training, the model learns to (a) disentangle calligraphic styles from real images and
+(b) generate fake images that are indistinguishable from real ones. At test time, the model can either (c) imitate the calligraphic
+styles that disentangled from reference samples or (d) just randomly sample styles from a prior distribution to generate different
+handwriting images. In addition, each module shares its parameters at different training stages of (a) and (b).
+
+sual quality when providing only one reference image at test
+time. Summarizing, the state-of-arts GANs are still unable to
+synthesize realistic variable-sized handwriting images with
+controllable handwriting styles. In contrast, our HiGAN is
+capable of generating diverse handwriting words/texts con-
+ditioned on arbitrary-length texts and disentangled styles.
+
+Handwriting Imitation GAN
+
+Given a set of handwriting images X and their text labels Y,
+our goal is to train a generator G that can synthesize diverse,
+realistic handwriting images conditioned on the arbitrary-
+length text y = [y1, · · · , yL] (with a length of L) and any
+style feature s. Notably, the style s can be either (1) sampled
+from a prior distribution N(0, 1) or (2) disentangled from a
+reference image x ∈X with a pre-trained style encoder E
+(i.e., s = E(x)). Speciﬁcally, Fig. 2 illustrates the overview
+of HiGAN. Next, we will describe the framework of HiGAN
+and its training objectives in the following subsections.
+
+Framework of HiGAN
+
+In this subsection, we will detail the framework of the pro-
+posed HiGAN, which consists of the following components:
+
+Generator.
+Since we require the model to generate hand-
+writing images conditioned on arbitrary-length text y, the
+generator G must be capable of producing variable-length
+images (rather than that with ﬁxed sizes). For handwriting,
+one strong assumption is that humans typically ﬁnish a text
+
+with writing letters sequentially and individually, while the
+corresponding ligatures mostly depend on the adjacent char-
+acters. Hence, the generator G is designed to mimic this
+handwriting process with the following strategies:
+
+1. Text-Map Generation. Let F = {fc|c ∈A} be a set of
+character ﬁlter maps, where A is the alphabet and fc is the
+ﬁlter map of character c. Furthermore, each ﬁlter map fc
+is modulated with a consistent but randomized noise σ to
+introduce subtle distortions. As a result, a given text y =
+[y1, · · · , yL] can be embedded into multiple ﬁlter maps as
+F(y, σ) = [fy1⊗σ, · · · , fyL⊗σ]. Finally, those ﬁlter maps
+are concatenated horizontally into a wide one, regarded as
+a style-invariant text-map M.
+
+2. Style Rendering. A fully convolutional network is further
+utilized to upsample the text-map M and simultaneously
+render calligraphic styles. Speciﬁcally, conditional batch
+normalization (CBN) (Harm de Vries and Courville 2017)
+is employed to inject the style feature s into G, explic-
+itly affecting the handwriting styles of synthetic images
+(such as the text slant, skew, stroke width, and charac-
+ter shape). Since CBN is applied globally over the whole
+text-map, all letters are guaranteed to keep the consistent
+styles. Moreover, due to the merits of convolutions, the
+generator can automatically learn overlaps between adja-
+cent letters and draw natural ligatures if necessary.
+
+This eventually leads to the generator G being able to syn-
+thesize variable-length handwriting images conditioned on
+the arbitrary text y with a controllable style s.
+
+7486
+
+Discriminator.
+The discriminator D mainly learns a bi-
+nary classiﬁcation determining whether an image x is a real
+image from the training set or a fake image generated by G.
+
+Style Encoder.
+The style encoder E can disentangle the
+handwriting style s from a reference image x but without
+explicitly accessing the corresponding writer identity.
+
+Writer Identiﬁer.
+The writer identiﬁer I is utilized to dis-
+tinguish which writer a handwriting image x belongs to.
+Notably, the identiﬁer I can only classify the handwriting
+images of seen writers from the training set, while it can-
+not identify the handwriting of unseen writers at test time.
+Therefore, the identiﬁer I is only employed at training time,
+which aims at guiding the encoder E to cluster embeddings
+for the images of similar styles but diversify embeddings for
+the images of distinct styles (e.g., the samples from different
+writers). Hence, the identiﬁer I is discarded at test time.
+
+Recognizer.
+Given a handwriting sample x, the recognizer
+R is supposed to predict its text labels y correctly. No-
+tably, the recognizer R is ﬁrst trained with the annotated
+data {X, Y}, and then is utilized to guide the generator G
+to synthesize readable handwriting with any desired textual
+content y. Since the training corpus typically has limited se-
+mantic knowledge, the recognizer R cannot generalize to an
+open language domain. As a result, it may be difﬁcult for R
+to correctly recognize OOV words, while which is not de-
+sired for handwriting synthesis. One feasible solution is to
+remove the recurrent neural network, thus leaving R with
+a fully convolutional structure. This eventually prevents R
+from learning an implicit language model constrained on the
+training corpus, which may beneﬁt OOV word generation.
+
+Training Objectives
+To train HiGAN, it requires a set of handwriting images X,
+their text labels Y and the corresponding writer identities
+W. Moreover, a large open corpus C is employed to yield
+arbitrary texts for generating fake images at training time,
+where Y ⊂C. As shown in Fig. 2 (a) & (b), we train our
+framework with the following objectives:
+
+Adversarial Loss.
+Given an arbitrary text ˜y ∈C and a
+style feature s that sampled from a prior normal distribution
+N(0, 1), the generator G learns to synthesize a fake image
+G(˜y, s) that is indistinguishable (by the discriminator D)
+from the real image x ∈X via the adversarial loss, i.e.,
+
+Ladv1 = Ex[log D(x)] + E˜y,s[log(1 −D(G(˜y, s)))]. (1)
+
+Furthermore, given the real image x as a reference, the gen-
+erator should also synthesize a realistic image conditioned
+on the disentangled style E(x) as
+
+Ladv2 = Ex[log D(x)] + E˜y,x[log(1 −D(G(˜y, E(x))))].
+(2)
+Therefore, the overall adversarial loss during training is the
+sum of the two (i.e., Ladv1 and Ladv2) as
+
+Ladv = Ladv1 + Ladv2.
+(3)
+
+This adversarial loss can guarantee the generator G to syn-
+thesize realistic handwriting images.
+
+Text Recognition Loss.
+Despite visual verisimilitude, the
+generator G should also constrain the synthetic images to
+preserve the desired textual contents y. To this end, the rec-
+ognizer R ﬁrst is optimized by minimizing the connection-
+ist temporal classiﬁcation (CTC) (Alex Graves and Gomez
+2006) loss for each ground-truth pair {x ∈X, y ∈Y} from
+the training set, i.e.,
+
+LD
+ctc = Ex,y[−y log R(x)],
+(4)
+when maximizing the adversarial loss. This loss ensures that
+the recognizer R can correctly predict text labels of the
+given handwriting image x. Therefore, the trained R can fur-
+ther guide G to synthesize the readable handwriting image
+G(˜y, s) that retains the desired textual contents ˜y ∈C as
+
+LG
+ctc = E˜y,s[−˜y log R(G(˜y, s))],
+(5)
+where ˜y is sampled from the open corpus C, and the param-
+eters of R keep ﬁxed when minimizing the adversarial loss.
+
+Style Disentangling.
+The primary objective of HiGAN is
+learning to exactly disentangle calligraphic styles from the
+reference handwriting images. To this end, we ﬁrst employ
+the latent style reconstruction loss to HiGAN as
+Lsty = E˜y,s[||s −E(G(˜y, s))||1],
+(6)
+i.e., Lsty enforces the model to reconstruct the style s of
+any synthetic image G(˜y, s) with the help of the encoder
+E, thus guaranteeing that the style s can explicitly affect
+handwriting styles of synthetic images.
+Furthermore, we also optimize the writer identiﬁer I by
+minimizing the cross-entropy loss for each ground-truth pair
+{x, w} of the training set (where w ∈W is the correspond-
+ing writer identity of x), i.e.,
+
+LD
+id = Ex,w[−w log I(x)],
+(7)
+when maximizing the adversarial loss. This ensures that I
+can distinguish which writer the image x belongs to. To fur-
+ther learn the disentangled style feature ˜s = E(x) from
+a reference image x, we enforce that the synthetic image
+G(˜y, E(x)) to have a remarkably similar style compared
+with the reference image x. This is achieved by minimizing
+
+LG
+id = Ex,w,˜y[−w log I(G(˜y, E(x)))],
+(8)
+where I keeps ﬁxing its parameters when minimizing the ad-
+versarial loss. This LG
+id essentially constrains the encoder E
+to produce close style embeddings for the images of similar
+styles, while diversifying the style embeddings for that of
+distinct styles (e.g., the handwriting images from different
+writers). Notably, the encoder E can disentangle the style
+form any reference image x without the need of accessing
+the corresponding writer identity w. Therefore, such an en-
+coder E can potentially extract calligraphic styles from the
+handwriting images of unseen writers at test time.
+Lastly, we further explicitly regularize the encoded latent
+space to match the prior random distribution as
+Lkl = Ex[DKL(E(x)||N (0, 1))],
+(9)
+where DKL denotes the KL-divergence (Zhu et al. 2017).
+
+7487
+
+Full Objective.
+Our full objective functions can be sum-
+marized as follows. When maximizing the adversarial loss,
+the discriminator D, recognizer R, and writer identiﬁer I are
+optimized respectively as
+
+LD = −Ladv, LR = LD
+ctc, LI = LD
+id.
+(10)
+
+When minimizing the adversarial loss, the generator G and
+style encoder E are jointly optimized as
+
+LG,E = Ladv + λctcLG
+ctc + λidLG
+id + λstyLsty + λklLkl,
+(11)
+where λ controls the importance of different losses. Lastly,
+all modules are trained from scratch in an end-to-end way.
+
+Experiments
+Implementation Details.
+Inspired by Fogel (2020), all
+hyper-parameters λ are dynamically adjusted via the rule of
+gradient balance during training. The model is optimized us-
+ing Adam (Diederik and Ba 2015) with a learning rate of
+0.0001 and (β1, β2) = (0.5, 0.999). Experiments are con-
+ducted on a Dell workstation with an Intel(R) Xeon(R) CPU
+E5-2630 v4@2.20GHz, 32 GB RAM, and NVIDIA Quadro
+P5000 GPU 16GB. The batch size is set to 16 for all experi-
+ments, and all models are trained over 100K iterations.
+
+Baselines.
+We use GANwriting (Lei Kang 2020) and
+ScrabbleGAN (Sharon Fogel and Litman 2020) as our
+baselines, all of which can learn to generate handwritten
+words/texts. Brieﬂy, GANwriting can synthesize short hand-
+written words conditioned on referenced styles, and Scrab-
+bleGAN can synthesize long sentences with random styles.
+Differently, our HiGAN can synthesize handwriting im-
+ages conditioned on arbitrary-length texts and disentangled
+styles. More details of the competing GANs can refer to Ta-
+ble 1. Lastly, all baselines are trained using the ofﬁcial im-
+plementations provided by the authors.
+
+Datasets.
+To evaluate our HiGAN, we use the following
+two handwriting benchmarks:
+• IAM (Marti and Bunke 2002) dataset consists of 9862
+text lines with around 63K English words, written by 500
+different writers. The dataset provides the ofﬁcial splits
+with mutually exclusive authors. In our settings, only the
+training & validate sets are used for training GANs.
+• CVL (Florian Kleber and Sablatnig. 2013) dataset con-
+sists of seven handwritten documents (one German and
+six English texts) with about 83K words, written by 310
+writers. The dataset is ofﬁcially divided into the training
+set (with 27 writers) and test set (with 283 writers).
+In our experiments, IAM is mainly used for training Hi-
+GAN, while CVL is only for handwriting recognition tasks.
+
+Evaluation Metrics.
+For image synthesis, we use Fr´echet
+Inception Distance (FID) (Martin Heusel and Hochreiter
+2017) to evaluate the quality and diversity of synthetic im-
+ages, where FID measures the distance between the gen-
+erated distribution and real one through features extracted
+
+"handwriting" "imitation" "generative" "adversarial" "network"
+
+Figure 3: Latent-guided synthesis. Random styles of syn-
+thetic images are sampled from a prior normal distribution.
+
+[['Style\nText', ''],
+ ['"those"', ''],
+ ['"what"', ''],
+ ['"content"', ''],
+ ['"have"', ''],
+ ['"night"', ''],
+ ['"about"', '']]
+[['Style\nText', ''],
+ ['"those"', ''],
+ ['"what"', ''],
+ ['"content"', ''],
+ ['"have"', ''],
+ ['"night"', ''],
+ ['"about"', '']]
+[['Style\nText', ''],
+ ['"those"', ''],
+ ['"what"', ''],
+ ['"content"', ''],
+ ['"have"', ''],
+ ['"night"', ''],
+ ['"about"', '']]
+[['Style\nText', ''],
+ ['"those"', ''],
+ ['"what"', ''],
+ ['"content"', ''],
+ ['"have"', ''],
+ ['"night"', ''],
+ ['"about"', '']]
+[['Style\nText', ''],
+ ['"those"', ''],
+ ['"what"', ''],
+ ['"content"', ''],
+ ['"have"', ''],
+ ['"night"', ''],
+ ['"about"', '']]
+[['Style\nText', ''],
+ ['"those"', ''],
+ ['"what"', ''],
+ ['"content"', ''],
+ ['"have"', ''],
+ ['"night"', ''],
+ ['"about"', '']]
+[['Style\nText', ''],
+ ['"those"', ''],
+ ['"what"', ''],
+ ['"content"', ''],
+ ['"have"', ''],
+ ['"night"', ''],
+ ['"about"', '']]
+[['Style\nText', ''],
+ ['"those"', ''],
+ ['"what"', ''],
+ ['"content"', ''],
+ ['"have"', ''],
+ ['"night"', ''],
+ ['"about"', '']]
+Figure 4: Reference-guided synthesis. Different styles of
+synthetic images are disentangled from reference samples.
+
+via Inception-v3 network (Christian Szegedy and Wojna
+2016). For handwriting recognition, we use the character
+error rate (CER) and word error rate (WER) (Graves et al.
+2008) to evaluate the handwriting recognition performance.
+
+Experimental Results
+Latent-Guided Synthesis.
+Our HiGAN model is capable
+of generating arbitrary-length handwritten words with di-
+verse calligraphic styles. For latent-guided synthesis, differ-
+ent styles of synthetic images are randomly sampled from
+a prior normal distribution (refer to Fig. 2(d)). Speciﬁcally,
+Fig. 3 shows some selected synthetic images of different
+words with various styles, where each row presents hand-
+writing with the same style and each column with the same
+text. It is worth noting that HiGAN can render cursive liga-
+tures between adjacent characters if necessary.
+
+Reference-Guided Synthesis.
+HiGAN can disentangle
+calligraphic styles from reference images, and it further im-
+itates generating images of similar styles with other textual
+contents. Fig. 4 illustrates some selected synthetic samples
+under reference-guided synthesis. It can be observed that Hi-
+GAN successfully imitates calligraphic styles that similar to
+the reference samples (e.g., the word slant & skew, stroke
+
+7488
+
+[['Style Text', '"the process of pencil and paper as opposed to machines"'],
+ ['Style Text', '"higan can always change its handwriting as it likes"'],
+ ['', '']]
+[['Style Text', '"the process of pencil and paper as opposed to machines"'],
+ ['Style Text', '"higan can always change its handwriting as it likes"'],
+ ['', '']]
+[['Style Text', '"the process of pencil and paper as opposed to machines"'],
+ ['Style Text', '"higan can always change its handwriting as it likes"'],
+ ['', '']]
+[['Style Text', '"the process of pencil and paper as opposed to machines"'],
+ ['Style Text', '"higan can always change its handwriting as it likes"'],
+ ['', '']]
+[['Style Text', '"the process of pencil and paper as opposed to machines"'],
+ ['Style Text', '"higan can always change its handwriting as it likes"'],
+ ['', '']]
+Figure 5: Long handwritten text generation. For the provided
+textual information, we omit all space letters and join all
+words together to form a long text string.
+
+[['Text\n"gan"\n"close"\n"cheap"\n"house"\n"speak"', 'Style-A Style-B']]
+[['Text\n"gan"\n"close"\n"cheap"\n"house"\n"speak"', 'Style-A Style-B']]
+[['Text\n"gan"\n"close"\n"cheap"\n"house"\n"speak"', 'Style-A Style-B']]
+[['Text\n"gan"\n"close"\n"cheap"\n"house"\n"speak"', 'Style-A Style-B']]
+[['Text\n"gan"\n"close"\n"cheap"\n"house"\n"speak"', 'Style-A Style-B']]
+[['Text\n"gan"\n"close"\n"cheap"\n"house"\n"speak"', 'Style-A Style-B']]
+Figure 6: Style interpolation between two different styles.
+
+width, and character shape), while mostly matches the pro-
+vided textual contents. This result demonstrates that the pro-
+posed HiGAN is capable of imitating the calligraphic styles
+that disentangled from reference handwriting images.
+
+Long Text Synthesis.
+Although our model is only trained
+with short words, HiGAN can still synthesize arbitrary-
+length long texts (as shown in Fig. 5). This merit is credited
+to the superior architecture design of generator. Speciﬁcally,
+a long text is ﬁrst transformed into multiple character ﬁlter-
+maps and then concatenated into a variable-length text-map.
+With the fully convolutional structure, the style-invariant
+text-map then is upsampled into the target image condi-
+tioned on the given style, under which the character over-
+laps & cursive ligatures are automatically learned with con-
+volutions. Notably, HiGAN even can synthesize long texts
+of similar styles that disentangled from only short words.
+
+Style Interpolation.
+To further investigate the latent style
+space of HiGAN, we perform the linear interpolation be-
+tween two random styles (as shown in Fig. 6). It can be
+observed that the handwriting image continuously changes
+its calligraphic style conditioned on the interpolation val-
+ues, while strictly preserving its original textual contexts.
+This result demonstrates that our model can generalize in
+the style space rather than memorizing some trivial visual
+information.
+
+Figure 7: Handwritten text editing. From “happy” to
+“abcde”, the word changes one letter each time, while
+strictly preserving its original calligraphic style.
+
+[['Style', 'HiGAN(Ours)', 'ScrabbleGAN', 'GANWriting']]
+Figure 8: Qualitative comparison of different GANs for syn-
+thesizing short handwritten words. In addition, the words for
+each style are: “three”, “ynamany”, and “aisitli”, where the
+last two are not valid English words.
+
+Text Editing.
+In contrast to style interpolation, we per-
+form the text editing between two words (as shown in
+Fig. 6), where the interpolation is done in text space. As ob-
+served, when the word continuously changes its text letter-
+by-letter into another word, it strictly preserves its original
+calligraphic style. Moreover, our model not only renders nat-
+ural ligatures among adjacent characters after replacing the
+speciﬁc letter, but it also successfully generates OOV words
+with high visual quality (e.g., “abcde” is not a valid English
+word). This result demonstrates that HiGAN can generalize
+in text space rather than memorizing training words/texts.
+
+Compared with the State-of-Art GANs.
+To demonstrate
+the superiority of HiGAN, we ﬁrst make a qualitative com-
+parison of the competing GANs for synthesizing short hand-
+written words (in Fig. 8) and long texts (in Fig. 9), respec-
+tively. As shown in Fig. 8 & 9, each GAN produces mul-
+tiple outputs with various styles but ﬁxed textual contents.
+However, we notice that ScrabbleGAN cannot imitate the
+calligraphic styles of reference samples, since it lacks an en-
+coder to disentangle styles from handwriting images. More-
+over, GANwriting suffers from low visual quality when the
+
+7489
+
+[['Method', 'Style', '"most scientists like computers"'],
+ ['Scrabble', '', ''],
+ ['GAN', '', ''],
+ ['GAN', '', ''],
+ ['writing', '', ''],
+ ['HiGAN', '', ''],
+ ['(Ours)', '', '']]
+[['Method', 'Style', '"most scientists like computers"'],
+ ['Scrabble', '', ''],
+ ['GAN', '', ''],
+ ['GAN', '', ''],
+ ['writing', '', ''],
+ ['HiGAN', '', ''],
+ ['(Ours)', '', '']]
+[['Method', 'Style', '"most scientists like computers"'],
+ ['Scrabble', '', ''],
+ ['GAN', '', ''],
+ ['GAN', '', ''],
+ ['writing', '', ''],
+ ['HiGAN', '', ''],
+ ['(Ours)', '', '']]
+[['Method', 'Style', '"most scientists like computers"'],
+ ['Scrabble', '', ''],
+ ['GAN', '', ''],
+ ['GAN', '', ''],
+ ['writing', '', ''],
+ ['HiGAN', '', ''],
+ ['(Ours)', '', '']]
+[['Method', 'Style', '"most scientists like computers"'],
+ ['Scrabble', '', ''],
+ ['GAN', '', ''],
+ ['GAN', '', ''],
+ ['writing', '', ''],
+ ['HiGAN', '', ''],
+ ['(Ours)', '', '']]
+Figure 9: Qualitative comparison of different GANs for syn-
+thesizing long handwritten texts. For given texts, we omit all
+spaces and then concatenate all words into a long text string.
+
+Table 2: Quantitative comparison of GANs in terms of vi-
+sual quality and model size. In addition, “HiGAN-L.” and
+“HiGAN-R.” denote the latent-guided and reference-guided
+synthesises of HiGAN respectively. Lower values are better.
+
+style feature is encoded from only one reference image (as
+shown in Fig. 8). This is because GANwriting requires mul-
+tiple reference images to extract a reliable style feature for
+each synthetic sample during training. Thus, the visual qual-
+ity of synthetic image will degrade if only one style image
+is provided at test time. What is worse, GANwriting even
+cannot generate long handwritten texts (i.e., it can only gen-
+erate words with less than ten letters) as shown in Fig. 9. On
+the contrary, HiGAN can not only generate diverse hand-
+writing images of arbitrary-length texts but also imitate the
+calligraphic styles of reference images.
+Lastly, we make a quantitative comparison of different
+GANs in Table 2. Note, FID scores of the competing GANs
+are borrowed from the original papers, and their evaluation
+strategies may be slightly different. We observe that HiGAN
+outperforms the competing GANs in terms of visual quality
+and model size. Overall, experiments demonstrate the supe-
+riority of HiGAN for handwritten word/text synthesis.
+
+[['×', '×', '', '32.69', '14.71', '41.72', '20.25']]
+[['×', '×', '', '32.69', '14.71', '41.72', '20.25']]
+Table 3: Recognition results on CVL dataset. Notably, the
+ﬁrst three rows show the results of domain adaption, and the
+last row shows that of semi-supervised training. In addition,
+the highlighted row is the upper bound of the domain adap-
+tion from IAM to CVL. It is also worth noting that HiGAN
+is only trained on the IAM dataset. Lower values are better.
+
+Improving Recognition with GAN.
+We further demon-
+strate that HiGAN can improve the handwriting recogni-
+tion performance of domain adaption in a semi-supervised
+manner. To validate this, we compare the recognition per-
+formance with or without HiGAN for training set augmen-
+tation (as shown in Table 3). In our experimental settings:
+(1) HiGAN is only trained on IAM and then utilized to
+synthesize fake handwriting images from an open lexicon;
+(2) for the CVL dataset, only English scripts are used for
+training; (3) despite English words from CVL, we also in-
+clude the German words (only which share the English al-
+phabet) as out-of-vocabulary words at test time, thus re-
+sulting in two CVL test sets (i.e., CVL and CVLoov); (4)
+during training, HiGAN is used for training set augmenta-
+tion, and CRNN (Baoguang Shi and Yao 2016) is for hand-
+writing recognition. As shown in Table 3, we observe that
+HiGAN can boost the recognition performance of domain
+adaption from IAM to CVL, and this improvement is more
+apparent for out-of-vocabulary words in CVLoov. For the
+semi-supervised training, we can further slightly improve
+the recognition accuracy on CVL by using HiGAN to syn-
+thesize extra words from an open lexicon. Overall, exper-
+imental results demonstrate that a strong generative model
+can potentially beneﬁt the handwriting recognition.
+
+Conclusion
+In this paper, we have proposed a novel HiGAN for hand-
+writing imitation. Our model can generate diverse and re-
+alistic handwriting images conditioned on arbitrary textual
+contents, which are unconstrained to any predeﬁned corpus
+and OOV words. Moreover, HiGAN can disentangle styles
+from reference samples and ﬂexibly control the handwriting
+styles of synthetic images. Furthermore, we also ﬁnd that
+HiGAN can potentially beneﬁt handwriting recognition by
+augmenting training set with extra synthetic data. Both qual-
+itative and quantitative comparisons validate our superior-
+ity over the competing GANs in terms of visual quality and
+scalability. However, the human handwriting style is very ar-
+bitrary and thus HiGAN indeed exists a limit to synthesize
+meaningful handwriting images. In future work, we plan to
+further improve the diversity and visual quality of HiGAN.
+
+7490
+
+Acknowledgments
+
+This work is supported by National Key R&D Pro-
+gram of China under Grant No.2017YFB1002203; Na-
+tional Nature Science Foundation of China (NSFC) under
+Grant No.61976201; and NSFC Key Projects of Interna-
+tional (Regional) Cooperation and Exchanges under Grant
+No.61860206004; and Ningbo 2025 Key Project of Science
+and Technology Innovation under Grant No.2018B10071.
+
+Ethics Statement
+
+We believe that our work will have broad positive impli-
+cations in the development of artiﬁcial intelligence (AI).
+Speciﬁcally, our generative model can synthesize massive
+realistic labelled handwriting images after learning from a
+limited number of collected data. This can potentially bene-
+ﬁt the construction of handwriting recognition systems that
+aim at serving our society. Moreover, our work can further
+teach computers/robotics to write scripts as realistic as hu-
+mans, thus stepping closer to the high-level AI. On the other
+side, one potential negative ethical impact of our work is
+that it may be used for handwriting forgery. However, such
+a concern may be overestimated, because (1) our genera-
+tive model essentially exists a limit to synthesize meaning-
+ful handwriting images since the human handwriting style is
+very arbitrary, and (2) it is still not strong enough to fool the
+handwriting identiﬁcation experts.
+
+References
+
+Achint Oommen Thomas, A. R.; and Govindaraju, V. 2009.
+Synthetic Handwritten CAPTCHAs.
+Pattern Recognition
+42(12): 3365–3373.
+
+Alec Radford, Luke Metz, S. C. 2013. Unsupervised Repre-
+sentation Learning with Deep Convolutional Generative Ad-
+versarial Networks. In arXiv preprint arXiv:1511.06434.
+
+Alex Graves, S. F.; and Gomez, F. 2006. Connectionist Tem-
+poral Classiﬁcation: Labelling Unsegmented Sequence Data
+with Recurrent Neural Networks. In International Confer-
+ence on Machine Learning, 369–376.
+
+Andrew Brock, J. D.; and Simonyan, K. 2019. Large Scale
+GAN Training for High Fidelity Natural Image Synthesis.
+In International Conference for Learning Representations.
+
+Baoguang Shi, X. B.; and Yao, C. 2016.
+An End-to-
+End Trainable Neural Network for Image-Based Sequence
+Recognition and Its Application to Scene Text Recognition.
+IEEE Transactions on Pattern Analysis and Machine Intelli-
+gence 39(11): 2298–2304.
+
+Bo Chang, Qiong Zhang, S. P.; and Meng, L. 2018. Gener-
+ating Handwritten Chinese Characters using CycleGAN. In
+Proceedings of the IEEE Winter Conference on Applications
+of Computer Vision.
+
+Christian Szegedy, Vincent Vanhoucke, S. I. J. S.; and Wo-
+jna, Z. 2016.
+Rethinking the Inception Architecture for
+Computer Vision. In Proceedings of the IEEE conference
+on computer vision and pattern recognition, 2818–2826.
+
+Diederik, K. P.; and Ba, J. 2015.
+Adam: A Method for
+Stochastic Optimization.
+In International Conference for
+Learning Representations.
+
+Eloi Alonso, B. M.; and Messina, R. 2019.
+Adversarial
+Generation of Handwritten Text Images Conditioned on Se-
+quences. In International Conference on Document Analysis
+and Recognition, 481–486.
+
+Florian Kleber, Stefan Fiel, M. D.; and Sablatnig., R. 2013.
+Cvl-Database: An Ofﬂine Database for Writer Retrieval,
+Writer Identiﬁcation and Word Spotting. In International
+Conference on Document Analysis and Recognition, 560–
+564.
+
+Graves, A. 2013.
+Generating Sequences with Recurrent
+Neural Networks. In arXiv preprint arXiv:1308.0850.
+
+Graves, A.; Liwicki, M.; Fern´andez, S.; Bertolami, R.;
+Bunke, H.; and Schmidhuber, J. 2008. A Novel Connec-
+tionist System for Unconstrained Handwriting Recognition.
+IEEE Transactions on Pattern Analysis and Machine Intelli-
+gence 31(5): 855–868.
+
+Harm de Vries, Florian Strub, J. M. H. L. O. P.; and
+Courville, A. C. 2017. Modulating Early Visual Processing
+by Language. In Advances in Neural Information Process-
+ing Systems, 6594–6604.
+
+Hsin-Ying Lee, Hung-Yu Tseng, J.-B. H. M. S.; and Yang,
+M.-H. 2018. Diverse Image-to-Image Translation via Dis-
+entangled Representations. In Proceedings of the European
+conference on computer vision, 35–51.
+
+Ian Goodfellow, Jean Pouget-Abadie, M. M.-B. X. D. W.-F.
+S. O. A. C. Y. B. 2014. Generative Adversarial Nets. In
+Advances in neural information processing systems, 2672–
+2680.
+
+Jun-Yan Zhu, Taesung Park, P. I.-A. A. E. 2017. Unpaired
+Image-to-Image Translation using Cycle-Consistent Adver-
+sarial Networks. In Proceedings of the IEEE Conference on
+Computer Vision, 2223–2232.
+
+Kingma, D. P.; and Welling, M. 2013. Auto-Encoding Vari-
+ational Bayes. In arXiv preprint arXiv:1312.6114.
+
+Lei Kang, Pau Rib, Y. M. R.-A. F. M. V. 2020. GANwrit-
+ing: Content-Conditioned Generation of Styled Handwritten
+Word Images. In Proceedings of the European conference
+on computer vision.
+
+Lin, Z.; and Wan, L. 2007. Style-Preserving English Hand-
+writing Synthesis. Pattern Recognition 40(7): 2097–2109.
+
+Marti, Z.-V.; and Bunke, H. 2002. The IAM-Database: An
+English Sentence Database for Ofﬂine Handwriting Recog-
+nition.
+International Journal on Document Analysis and
+Recognition 5(1): 39–46.
+
+Martin Heusel, Hubert Ramsauer, T. U. B. N.; and Hochre-
+iter, S. 2017. GANs Trained by a Two Time-scale Update
+Rule Converge to a Local Nash Equilibrium. In Advances in
+Neural Information Processing Systems, 6626–6637.
+
+Mirza, M.; and Osindero, S. 2014. Conditional Generative
+Adversarial Nets. In arXiv preprint arXiv:1411.1784.
+
+7491
+
+Sharon Fogel, Hadar Averbuch-Elor, S. C. S. M.; and Lit-
+man, R. 2020.
+ScrabbleGAN: Semi-Supervised Varying
+Length Handwritten Text Generation. In Proceedings of the
+IEEEConference on Computer Vision and Pattern Recogni-
+tion, 4324–4333.
+Tom S. F. Haines, O. M. A.; and Brostow, G. J. 2016. My
+Text in Your Handwriting. ACM Transactions on Graphics
+35(3): 1–18.
+Yunjey Choi, Youngjung Uh, J. Y. J.-W. H. 2020. StarGAN
+v2: Diverse Image Synthesis for Multiple Domains. In Pro-
+ceedings of the IEEE conference on computer vision and
+pattern recognition, 8188–8197.
+Yunjey Choi, Minje Choi, M. K. J.-W. H. S. K.; and Choo, J.
+2018. StarGAN: Uniﬁed Generative Adversarial Networks
+for Multi-Domain Image-to-Image Translation. In Proceed-
+ings of the IEEE conference on computer vision and pattern
+recognition, 8789–8797.
+Zhu, J.-Y.; Zhang, R.; Pathak, D.; Darrell, T.; Efros, A. A.;
+Wang, O.; and Shechtman, E. 2017.
+Toward Multimodal
+Image-to-Image Translation. In Advances in Neural Infor-
+mation Processing Systems.
+
+7492

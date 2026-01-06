@@ -1,0 +1,588 @@
+NOVEMBER 2020 | VOL. 63 | NO. 11 | COMMUNICATIONS OF THE ACM 139
+
+By Ian Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, 
+David Warde-Farley, Sherjil Ozair, Aaron Courville, and Yoshua Bengio
+
+Abstract
+Generative adversarial networks are a kind of artificial intel-
+ligence algorithm designed to solve the generative model-
+ing problem. The goal of a generative model is to study a 
+collection of training examples and learn the probability 
+distribution that generated them. Generative Adversarial 
+Networks (GANs) are then able to generate more examples 
+from the estimated probability distribution. Generative 
+models based on deep learning are common, but GANs 
+are among the most successful generative models (espe-
+cially in terms of their ability to generate realistic high-
+resolution images). GANs have been successfully applied 
+to a wide variety of tasks (mostly in research settings) but 
+continue to present unique challenges and research 
+opportunities because they are based on game theory 
+while most other approaches to generative modeling are 
+based on optimization.
+
+applications of GANs and identify core research problems 
+related to convergence in games necessary to make GANs a 
+reliable technology.
+
+2. GENERATIVE MODELING
+The goal of supervised learning is relatively straightforward 
+to specify, and all supervised learning algorithms have 
+essentially the same goal: learn to accurately associate new 
+input examples with the correct outputs. For instance, an 
+object recognition algorithm may associate a photo of a dog 
+with some kind of DOG category identifier.
+Unsupervised learning is a less clearly defined branch of 
+machine learning, with many different unsupervised learn-
+ing algorithms pursuing many different goals. Broadly 
+speaking, the goal of unsupervised learning is to learn some-
+thing useful by examining a dataset containing unlabeled 
+input examples. Clustering and dimensionality reduction 
+are common examples of unsupervised learning.
+Another approach to unsupervised learning is generative 
+modeling. In generative modeling, training examples x are 
+drawn from an unknown distribution pdata(x). The goal of a 
+generative modeling algorithm is to learn a pmodel(x) that 
+approximates pdata(x) as closely as possible.
+A straightforward way to learn an approximation of pdata is 
+to explicitly write a function pmodel(x; θ) controlled by param-
+eters θ and search for the value of the parameters that makes 
+pdata and pmodel as similar as possible. In particular, the most 
+popular approach to generative modeling is probably maxi-
+mum likelihood estimation, consisting of minimizing the 
+Kullback-Leibler divergence between pdata and pmodel. The 
+common approach of estimating the mean parameter of a 
+Gaussian distribution by taking the mean of a set of observa-
+tions is one example of maximum likelihood estimation. 
+This approach based on explicit density functions is illus-
+trated in Figure 1.
+Explicit density modeling has worked well for traditional 
+statistics, using simple functional forms of probability dis-
+tributions, usually applied to small numbers of variables. 
+More recently, with the rise of machine learning in general 
+and deep learning in particular, researchers have become 
+interested in learning models that make use of relatively 
+complicated functional forms. When a deep neural net-
+work is used to generate data, the corresponding density 
+function 
+may 
+be 
+computationally 
+intractable. 
+Traditionally, there have been two dominant approaches 
+to confronting this intractability problem: (1) carefully 
+design the model to have a tractable density function 
+(e.g., Frey11) and (2) design a learning algorithm based on 
+
+research highlights 
+
+140 COMMUNICATIONS OF THE ACM | NOVEMBER 2020 | VOL. 63 | NO. 11
+
+a computationally tractable approximation of an intractable 
+density function (e.g., Kingma and Welling15). Both approaches 
+have proved difficult, and for many applications, such as gen-
+erating realistic high resolution images, researchers remain 
+unsatisfied with the results so far. This motivates further 
+research to improve these two paths, but also suggests that a 
+third path could be useful.
+Besides taking a point x as input and returning an esti-
+mate of the probability of generating that point, a generative 
+model can be useful if it is able to generate a sample from 
+the distribution pmodel. This is illustrated in Figure 2. Many 
+models that represent a density function can also generate 
+samples from that density function. In some cases, generat-
+ing samples is very expensive or only approximate methods 
+of generating samples are tractable.
+Some generative models avoid the entire issue of design-
+ing a tractable density function and learn only a tractable 
+sample generation process. These are called implicit genera-
+tive models. GANs fall into this category. Prior to the intro-
+duction of GANs, the state of the art deep implicit generative 
+model was the generative stochastic network4 which is capa-
+ble of approximately generating samples via an incremental 
+process based on Markov chains. GANs were introduced in 
+order to create a deep implicit generative model that was 
+able to generate true samples from the model distribution 
+in a single generation step, without need for the incremen-
+tal generation process or approximate nature of sampling 
+Markov chains.
+Today, the most popular approaches to generative mod-
+eling are probably GANs, variational autoencoders,15 and 
+fully-visible belief nets (e.g., Frey11, 26). None of these 
+approaches relies on Markov chains, so the reason for the 
+interest in GANs today is not that they succeeded at their 
+original goal of generative modeling without Markov chains, 
+but rather that they have succeded in generating high-qual-
+ity images and have proven useful for several tasks other 
+than straightforward generation, as described in Section 5.
+
+3. GENERATIVE ADVERSARIAL NETWORKS
+Generative adversarial networks are based on a game, in the 
+sense of game theory, between two machine learning models, 
+typically implemented using neural networks.
+One network called the generator defines pmodel(x) implic-
+itly. The generator is not necessarily able to evaluate the den-
+sity function pmodel. For some variants of GANs, evaluation of 
+the density function is possible (any tractable density model 
+for which sampling is tractable and differntiable could 
+be trained as a GAN generator, as done by Danihelka 
+
+p(x)
+
+NOVEMBER 2020 | VOL. 63 | NO. 11 | COMMUNICATIONS OF THE ACM 141
+
+et al.6), but this is not required. Instead, the generator is 
+able to draw samples from the distribution pmodel. The gen-
+erator is defined by a prior distribution p(z) over a vector z 
+that serves as input to the generator function G(z; θ(G)) where 
+θ(G) is a set of learnable parameters defining the generator’s 
+strategy in the game. The input vector z can be thought of as 
+a source of randomness in an otherwise deterministic sys-
+tem, analogous to the seed of pseudorandom number gen-
+erator. The prior distribution p(z) is typically a relatively 
+unstructured distribution, such as a high-dimensional 
+Gaussian distribution or a uniform distribution over a 
+hypercube. Samples z from this distribution are then just 
+noise. The main role of the generator is to learn the func-
+tion G(z) that transforms such unstructured noise z into 
+realistic samples.
+The other player in this game is the discriminator. The 
+discriminator examines samples x and returns some esti-
+mate D(x; θ(D)) of whether x is real (drawn from the training 
+distribution) or fake (drawn from pmodel by running the gen-
+erator). In the original formulation of GANs, this estimate 
+consists of a probability that the input is real rather than 
+fake assuming that the real distribution and fake distribu-
+tion are sampled equally often. Other formulations (e.g., 
+Arjovsky et al.1) exist but generally speaking, at the level of 
+verbal, intuitive descriptions, the discriminator tries to pre-
+dict whether the input was real or fake.
+Each player incurs a cost: J(G)(θ(G), θ(D)) for the generator 
+and J(D)(θ(G), θ(D)) for the discriminator. Each player attempts 
+to minimize its own cost. Roughly speaking, the discrimina-
+tor’s cost encourages it to correctly classify data as real or 
+fake, while the generator’s cost encourages it to generate 
+samples that the discriminator incorrectly classifies as real. 
+Very many different specific formulations of these costs are 
+possible and so far most popular formulations seem to per-
+form roughly the same.18 In the original version of 
+GANs, J(D) was defined to be the negative log-likelihood that 
+the discriminator assigns to the real-vs-fake labels given the 
+input to the discriminator. In other words, the discriminator 
+is trained just like a regular binary classifier. The original 
+work on GANs offered two versions of the cost for the gener-
+ator. One version, today called minimax GAN (M-GAN) 
+defined a cost J(G) = −J(D), yielding a minimax game that is 
+straightforward to analyze theoretically. M-GAN defines the 
+cost for the generator by flipping the sign of the discrimina-
+tor’s cost; another approach is the non-saturating GAN 
+(NS-GAN), for which the generator’s cost is defined by flip-
+ping the discriminator’s labels. In other words, the genera-
+tor is tried to minimize the negative log-likelihood that the 
+discriminator assigns to the wrong labels. The later helps to 
+avoid gradient saturation while training the model.
+We can think of GANs as a bit like counterfeiters and 
+police: the counterfeiters make fake money while the 
+police try to arrest counterfeiters and continue to allow 
+the spending of legitimate money. Competition between 
+counterfeiters and police leads to more and more realistic 
+counterfeit money until eventually the counterfeiters pro-
+duce perfect fakes and the police cannot tell the difference 
+between real and fake money. One complication to this 
+analogy is that the generator learns via the discriminator’s 
+
+gradient, as if the counterfeiters have a mole among the 
+police reporting the specific methods that the police use 
+to detect fakes.
+This process is illustrated in Figure 3. Figure 4 shows a 
+cartoon giving some intution for how the process works.
+
+research highlights 
+
+142 COMMUNICATIONS OF THE ACM | NOVEMBER 2020 | VOL. 63 | NO. 11
+
+[['',
+ 'x\nz',
+ '',
+ 'x\nz',
+ '',
+ 'an intractable density functions. GANs do not involve any\n'
+ 'Figure 5. This image is a sample from a Progressive GAN14 depicting\n'
+ 'a person who does not exist but was “imagined” by a GAN after\n'
+ 'training on photos of celebrities.']]
+The situation is not straightforward to model as an opti-
+mization problem because each player’s cost is a function of 
+the other player’s parameters, but each player may control 
+only its own parameters. It is possible to reduce the situa-
+tion to optimization, where the goal is to minimize
+
+[['',
+ 'x\nz',
+ '',
+ 'x\nz',
+ '',
+ 'an intractable density functions. GANs do not involve any\n'
+ 'Figure 5. This image is a sample from a Progressive GAN14 depicting\n'
+ 'a person who does not exist but was “imagined” by a GAN after\n'
+ 'training on photos of celebrities.']]
+[['',
+ 'x\nz',
+ '',
+ 'x\nz',
+ '',
+ 'an intractable density functions. GANs do not involve any\n'
+ 'Figure 5. This image is a sample from a Progressive GAN14 depicting\n'
+ 'a person who does not exist but was “imagined” by a GAN after\n'
+ 'training on photos of celebrities.']]
+[['',
+ 'x\nz',
+ '',
+ 'x\nz',
+ '',
+ 'an intractable density functions. GANs do not involve any\n'
+ 'Figure 5. This image is a sample from a Progressive GAN14 depicting\n'
+ 'a person who does not exist but was “imagined” by a GAN after\n'
+ 'training on photos of celebrities.']]
+[['',
+ 'x\nz',
+ '',
+ 'x\nz',
+ '',
+ 'an intractable density functions. GANs do not involve any\n'
+ 'Figure 5. This image is a sample from a Progressive GAN14 depicting\n'
+ 'a person who does not exist but was “imagined” by a GAN after\n'
+ 'training on photos of celebrities.']]
+[['',
+ 'x\nz',
+ '',
+ 'x\nz',
+ '',
+ 'an intractable density functions. GANs do not involve any\n'
+ 'Figure 5. This image is a sample from a Progressive GAN14 depicting\n'
+ 'a person who does not exist but was “imagined” by a GAN after\n'
+ 'training on photos of celebrities.']]
+[['',
+ 'x\nz',
+ '',
+ 'x\nz',
+ '',
+ 'an intractable density functions. GANs do not involve any\n'
+ 'Figure 5. This image is a sample from a Progressive GAN14 depicting\n'
+ 'a person who does not exist but was “imagined” by a GAN after\n'
+ 'training on photos of celebrities.']]
+[['',
+ 'x\nz',
+ '',
+ 'x\nz',
+ '',
+ 'an intractable density functions. GANs do not involve any\n'
+ 'Figure 5. This image is a sample from a Progressive GAN14 depicting\n'
+ 'a person who does not exist but was “imagined” by a GAN after\n'
+ 'training on photos of celebrities.']]
+NOVEMBER 2020 | VOL. 63 | NO. 11 | COMMUNICATIONS OF THE ACM 143
+
+spurious Nash equilibria exist,32 whether the learning algo-
+rithm converges to a Nash equilibrium,24 and if it does so, 
+how quickly.21
+
+In many cases of practical interest, these theoretical 
+questions are open, and the best learning algorithms seem 
+empirically to often fail to converge. Theoretical work to 
+answer these questions is ongoing, as is work to design bet-
+ter costs, models, and training algorithms with better con-
+vergence properties.
+
+5. OTHER GAN TOPICS
+This article is focused on a summary of the core design con-
+siderations and algorithmic properties of GANs.
+Many other topics of potential interest cannot be consid-
+ered here due to space consideration. This article discussed 
+using GANs to approximate a distribution p(x) they have also 
+been extended to the conditional setting23, 25 where they gen-
+erate samples corresponding to some input by drawing sam-
+ples from the conditional distribution p(x | y). GANs are 
+related to moment matching16 and optimal transport.1 A 
+quirk of GANs that is made especially clear through their 
+connection to MMD and optimal transport is that they may 
+be used to train generative models for which pmodel has sup-
+port only on a thin manifold and may actually assign zero 
+likelihood to the training data. GANs struggle to generate 
+discrete data because the back-propagation algorithm 
+needs to propagate gradients from the discriminator 
+through the output of the generator, but this problem is 
+being gradually resolved.9 Like most generative models, 
+GANs can be used to fill in gaps in missing data.34 GANs have 
+proven very effective for learning to classify data using very 
+few labeled training examples.29 Evaluating the performance 
+of generative models including GANs is a difficult research 
+area in its own right.29, 31, 32, 33 GANs can be seen as a way for 
+machine learning to learn its own cost function, rather than 
+minimizing a hand-designed cost function. GANs can be 
+seen as a way of supervising machine learning by asking it to 
+
+approximation to their true underlying task. The only real 
+error is the statistical error (sampling of a finite amount of 
+training data rather than measuring the true underlying 
+data-generating distribution) and failure of the learning 
+algorithm to converge to exactly the optimal parameters. 
+Many generative modeling strategies would introduce these 
+sources of error and also further sources of approximation 
+error, based on Markov chains, optimization of bounds on 
+the true cost rather than the cost itself, etc.
+It is difficult to give much further specific guidance regard-
+ing the details of GANs because GANs are such an active 
+research area and most specific advice quickly becomes out 
+of date. Figure 6 shows how quickly the capabilities of GANs 
+have progressed in the years since their introduction.
+
+4. CONVERGENCE OF GANS
+The central theoretical results presented in the original GAN 
+paper13 were that:
+
+1. in the space of density functions pmodel and discrimina-
+tor functions D, there is only one local Nash equilib-
+rium, where pmodel = pdata.
+2. if it were possible to optimize directly over such den-
+sity functions, then the algorithm that consists of opti-
+mizing D to convergence in the inner loop, then 
+making a small gradient step on pmodel in the outer 
+loop, converges to this Nash equilibrium.
+
+However, the theoretical model of local moves directly in 
+density function space may not be very relevant to GANs as 
+they are trained in practice: using local moves in parameter 
+space of the generator function, among the set of functions 
+representable by neural networks with a finite number of 
+parameters, with each parameter represented with a finite 
+number of bits.
+In many different theoretical models, it is interesting to 
+study whether a Nash equilibrium exists,2 whether any 
+
+research highlights 
+
+144 COMMUNICATIONS OF THE ACM | NOVEMBER 2020 | VOL. 63 | NO. 11
+
+produce any output that the machine learning algorithm 
+itself recognizes as acceptable, rather than by asking it to 
+produce a specific example output. GANs are thus great for 
+learning in situations where there are many possible correct 
+answers, such as predicting the many possible futures that 
+can happen in video generation.19 GANs and GAN-like mod-
+els can be used to learn to transform data from one domain 
+into data from another domain, even without any labeled 
+pairs of examples from those domains (e.g., Zhu et al.35). For 
+example, after studying a collection of photos of zebras and 
+a collection of photos of horses, GANs can turn a photo of a 
+horse into a photo of a zebra.35 GANs have been used in sci-
+ence to simulate experiments that would be costly to run 
+even in traditional software simulators.7 GANs can be used 
+to create fake data to train other machine learning models, 
+either when real data would be hard to acquire30 or when 
+there would be privacy concerns associated with real data.3 
+GAN-like models called domain-adversarial networks can be 
+used for domain adaptation.12 GANs can be used for a variety 
+of interactive digital media effects where the end goal is to 
+produce compelling imagery.35 GANs can even be used to 
+solve variational inference problems used in other 
+approaches to generative modeling.20 GANs can learn useful 
+embedding vectors and discover concepts like gender of 
+human faces without supervision.27
+
+References
+ 1. Arjovsky, M., Chintala, S., Bottou, L. 
+Wasserstein gan. arXiv preprint 
+arXiv:1701.07875 (2017).
+ 2. Arora, S., Ge, R., Liang, Y., Ma, T., 
+Zhang, Y. Generalization and 
+equilibrium in generative adversarial 
+nets (gans). arXiv preprint 
+arXiv:1703.00573 (2017).
+ 3. Beaulieu-Jones, B.K., Wu, Z.S., 
+Williams, C., Greene, C.S. Privacy-
+preserving generative deep neural 
+networks support clinical data 
+sharing. bioRxiv (2017), 159756.
+ 4. Bengio, Y., Thibodeau-Laufer, E., 
+Alain, G., Yosinski, J. Deep generative 
+stochastic networks trainable by 
+backprop. In ICML’2014 (2014).
+ 5. Brundage, M., Avin, S., Clark, J., 
+Toner, H., Eckersley, P., Garfinkel, B., 
+Dafoe, A., Scharre, P., Zeitzoff, T., Filar, B., 
+Anderson, H., Roff, H., Allen, G.C., 
+Steinhardt, J., Flynn, C., hÉigeartaigh, 
+S.Ó., Beard, S., Belfield, H., Farquhar, S., 
+Lyle, C., Crootof, R., Evans, O., Page, M., 
+Bryson, J., Yampolskiy, R., Amodei, D. 
+The Malicious Use of Artificial 
+Intelligence: Forecasting, Prevention, 
+and Mitigation. ArXiv e-prints (Feb. 2018).
+ 6. Danihelka, I., Lakshminarayanan, B., 
+Uria, B., Wierstra, D., Dayan, P. 
+Comparison of maximum likelihood 
+and GAN-based training of real nvps. 
+arXiv preprint arXiv:1705.05263 
+(2017).
+
+ 7. de Oliveira, L., Paganini, M., Nachman, 
+B. Learning particle physics by 
+example: location-aware generative 
+adversarial networks for physics 
+synthesis. Computing and Software for 
+Big Science 1 1(2017), 4.
+ 8. Deng, J., Dong, W., Socher, R., 
+Li, L.-J., Li, K., Fei-Fei, L. ImageNet: A 
+Large-Scale Hierarchical Image 
+Database. In CVPR09 (2009).
+ 9. Fedus, W., Goodfellow, I., 
+Dai, A.M. MaskGAN: Better text 
+generation via filling in the _____. In 
+International Conference on Learning 
+Representations (2018).
+ 10. Fedus, W., Rosca, M., 
+Lakshminarayanan, B., Dai, A.M., 
+Mohamed, S., Goodfellow, I. Many 
+paths to equilibrium: GANs do not 
+need to decrease a divergence at 
+every step. In International 
+Conference on Learning 
+Representations (2018).
+ 11. Frey, B.J. Graphical Models for Machine 
+Learning and Digital Communication. 
+MIT Press, Boston, 1998.
+ 12. Ganin, Y., Lempitsky, V. Unsupervised 
+domain adaptation by 
+backpropagation. In International 
+Conference on Machine Learning 
+(2015), 1180–1189.
+ 13. Goodfellow, I., Pouget-Abadie, J., 
+Mirza, M., Xu, B., Warde-Farley, D., 
+Ozair, S., Courville, A., Bengio, Y. 
+Generative adversarial nets. 
+
+Z. Ghahramani, M. Welling, C. Cortes, 
+N.D. Lawrence, K.Q. Weinberger, eds. 
+Advances in Neural Information 
+Processing Systems 27, Curran 
+Associates, Inc., Boston, 2014, 
+2672–2680.
+ 14. Karras, T., Aila, T., Laine, S., Lehtinen, J. 
+Progressive growing of GANs for 
+improved quality, stability, and variation. 
+CoRR, abs/1710.10196 (2017).
+ 15. Kingma, D.P., Welling, M. Auto-
+encoding variational bayes. In 
+Proceedings of the International 
+Conference on Learning 
+Representations (ICLR) (2014).
+ 16. Li, Y., Swersky, K., Zemel, R.S. Generative 
+moment matching networks. CoRR, 
+abs/1502.02761 (2015).
+ 17. Liu, M.-Y., Tuzel, O. Coupled generative 
+adversarial networks. D.D. Lee, M. 
+Sugiyama, U.V. Luxburg, I. Guyon, R. 
+Garnett, eds. Advances in Neural 
+Information Processing Systems 29, 
+Curran Associates, Inc., Boston, 2016, 
+469–477.
+ 18. Lucic, M., Kurach, K., Michalski, M., 
+Gelly, S., Bousquet, O. Are GANs 
+created equal? a large-scale study. 
+arXiv preprint arXiv:1711.10337 (2017).
+ 19. Mathieu, M., Couprie, C., LeCun, Y. 
+Deep multi-scale video prediction 
+beyond mean square error. arXiv 
+preprint arXiv:1511.05440 (2015).
+ 20. Mescheder, L., Nowozin, S., Geiger, A. 
+Adversarial variational bayes: Unifying 
+variational autoencoders and 
+generative adversarial networks. arXiv 
+preprint arXiv:1701.04722 (2017).
+ 21. Mescheder, L., Nowozin, S., Geiger, A. 
+The numerics of gans. In Advances in 
+Neural Information Processing 
+Systems (2017), 1823–1833.
+ 22. Metz, L., Poole, B., Pfau, D., 
+Sohl-Dickstein, J. Unrolled generative 
+adversarial networks. arXiv preprint 
+arXiv:1611.02163 (2016).
+ 23. Mirza, M., Osindero, S. Conditional 
+generative adversarial nets. arXiv 
+preprint arXiv:1411.1784 (2014).
+ 24. Nagarajan, V., Kolter, J.Z. Gradient 
+descent GAN optimization is locally 
+stable. I. Guyon, U.V. Luxburg, S. 
+Bengio, H. Wallach, R. Fergus, S. 
+Vishwanathan, R. Garnett, eds. 
+Advances in Neural Information 
+Processing Systems 30, Curran 
+Associates, Inc., Boston, 2017, 
+5585–5595.
+
+ 25. Odena, A., Olah, C., Shlens, J. 
+Conditional image synthesis with 
+auxiliary classifier gans. arXiv preprint 
+arXiv:1610.09585 (2016).
+ 26. Oord, A. v. d., Li, Y., Babuschkin, I., 
+Simonyan, K., Vinyals, O., 
+Kavukcuoglu, K., Driessche, G. v. d., 
+Lockhart, E., Cobo, L.C., Stimberg, F., 
+et al. Parallel wavenet: Fast 
+high-fidelity speech synthesis. arXiv 
+preprint arXiv:1711.10433 (2017).
+ 27. Radford, A., Metz, L., Chintala, S. 
+Unsupervised representation learning 
+with deep convolutional generative 
+adversarial networks. arXiv preprint 
+arXiv:1511.06434 (2015).
+ 28. Ratliff, L.J., Burden, and S.A., Sastry, 
+S.S. Characterization and computation 
+of local nash equilibria in continuous 
+games. In Communication, Control, 
+and Computing (Allerton), 2013 51st 
+Annual Allerton Conference on. IEEE, 
+(2013), 917–924.
+ 29. Salimans, T., Goodfellow, I., 
+Zaremba, W., Cheung, V., Radford, A., 
+Chen, X. Improved techniques for 
+training gans. In Advances in Neural 
+Information Processing Systems 
+(2016), 2234–2242.
+ 30. Shrivastava, A., Pfister, T., Tuzel, O., 
+Susskind, J., Wang, W., Webb, R. 
+Learning from simulated and 
+unsupervised images through 
+adversarial training.
+ 31. Theis, L., van den Oord, A., Bethge, 
+M. A note on the evaluation of 
+generative models. arXiv:1511.01844 
+(Nov 2015).
+ 32. Unterthiner, T., Nessler, B., 
+Klambauer, G., Heusel, M., Ramsauer, 
+H., Hochreiter, S. Coulomb GANs: 
+Provably optimal Nash equilibria via 
+potential fields. arXiv preprint 
+arXiv:1708.08819 (2017).
+ 33. Wu, Y., Burda, Y., Salakhutdinov, R., 
+Grosse, R. On the quantitative analysis 
+of decoder-based generative models. 
+arXiv preprint arXiv:1611.04273 (2016).
+ 34. Yeh, R., Chen, C., Lim, T.Y., Hasegawa-
+Johnson, M., Do, M.N. Semantic image 
+inpainting with perceptual and 
+contextual losses. arXiv preprint 
+arXiv:1607.07539 (2016).
+ 35. Zhu, J.-Y., Park, T., Isola, P., Efros, A.A. 
+Unpaired image-to-image translation 
+using cycle-consistent adversarial 
+networks. arXiv preprint 
+arXiv:1703.10593 (2017).
+
+Ian Goodfellow, written while at Google 
+Brain.
+Jean Pouget-Abadie, Mehdi Mirza, 
+Bing Xu, David Warde-Farley, 
+Sherjil Ozair, Aaron Courville, and 
+Yoshua Bengio, Université de Montréal.
+
+Copyright held by authors/owners. Publication rights licensed to ACM.

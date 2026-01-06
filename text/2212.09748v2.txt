@@ -1,0 +1,4729 @@
+Scalable Diffusion Models with Transformers
+
+William Peebles*
+
+UC Berkeley
+Saining Xie
+New York University
+
+Figure 1. Diffusion models with transformer backbones achieve state-of-the-art image quality. We show selected samples from two
+of our class-conditional DiT-XL/2 models trained on ImageNet at 512×512 and 256×256 resolution, respectively.
+
+Abstract
+
+We explore a new class of diffusion models based on the
+transformer architecture. We train latent diffusion models
+of images, replacing the commonly-used U-Net backbone
+with a transformer that operates on latent patches. We an-
+alyze the scalability of our Diffusion Transformers (DiTs)
+through the lens of forward pass complexity as measured by
+Gﬂops. We ﬁnd that DiTs with higher Gﬂops—through in-
+creased transformer depth/width or increased number of in-
+put tokens—consistently have lower FID. In addition to pos-
+sessing good scalability properties, our largest DiT-XL/2
+models outperform all prior diffusion models on the class-
+conditional ImageNet 512×512 and 256×256 benchmarks,
+achieving a state-of-the-art FID of 2.27 on the latter.
+
+1. Introduction
+
+Machine learning is experiencing a renaissance powered
+by transformers. Over the past ﬁve years, neural architec-
+tures for natural language processing [8, 42], vision [10]
+and several other domains have largely been subsumed by
+transformers [60].
+Many classes of image-level genera-
+tive models remain holdouts to the trend, though—while
+transformers see widespread use in autoregressive mod-
+els [3,6,43,47], they have seen less adoption in other gener-
+ative modeling frameworks. For example, diffusion models
+have been at the forefront of recent advances in image-level
+generative models [9,46]; yet, they all adopt a convolutional
+U-Net architecture as the de-facto choice of backbone.
+
+1
+
+arXiv:2212.09748v2 [cs.CV] 2 Mar 2023
+
+[['', None, '', 'Diameter\n5 20 80 320\nGflops'],
+ ['', '', '', ''],
+ ['', '', '', ''],
+ ['', '', '', ''],
+ ['', '', '', ''],
+ ['', '', '', ''],
+ ['', '', '', ''],
+ ['', '', '', ''],
+ ['', '', '', ''],
+ ['', '', '', ''],
+ ['', '', '', '']]
+[['', None, '', 'Diameter\n5 20 80 320\nGflops'],
+ ['', '', '', ''],
+ ['', '', '', ''],
+ ['', '', '', ''],
+ ['', '', '', ''],
+ ['', '', '', ''],
+ ['', '', '', ''],
+ ['', '', '', ''],
+ ['', '', '', ''],
+ ['', '', '', ''],
+ ['', '', '', '']]
+Figure 2. ImageNet generation with Diffusion Transformers (DiTs). Bubble area indicates the ﬂops of the diffusion model. Left:
+FID-50K (lower is better) of our DiT models at 400K training iterations. Performance steadily improves in FID as model ﬂops increase.
+Right: Our best model, DiT-XL/2, is compute-efﬁcient and outperforms all prior U-Net-based diffusion models, like ADM and LDM.
+
+The seminal work of Ho et al. [19] ﬁrst introduced the
+U-Net backbone for diffusion models. Having initially seen
+success within pixel-level autoregressive models and con-
+ditional GANs [23], the U-Net was inherited from Pixel-
+CNN++ [52, 58] with a few changes. The model is con-
+volutional, comprised primarily of ResNet [15] blocks. In
+contrast to the standard U-Net [49], additional spatial self-
+attention blocks, which are essential components in trans-
+formers, are interspersed at lower resolutions. Dhariwal and
+Nichol [9] ablated several architecture choices for the U-
+Net, such as the use of adaptive normalization layers [40] to
+inject conditional information and channel counts for con-
+volutional layers. However, the high-level design of the U-
+Net from Ho et al. has largely remained intact.
+With this work, we aim to demystify the signiﬁcance of
+architectural choices in diffusion models and offer empiri-
+cal baselines for future generative modeling research. We
+show that the U-Net inductive bias is not crucial to the per-
+formance of diffusion models, and they can be readily re-
+placed with standard designs such as transformers. As a
+result, diffusion models are well-poised to beneﬁt from the
+recent trend of architecture uniﬁcation—e.g., by inheriting
+best practices and training recipes from other domains, as
+well as retaining favorable properties like scalability, ro-
+bustness and efﬁciency. A standardized architecture would
+also open up new possibilities for cross-domain research.
+In this paper, we focus on a new class of diffusion models
+based on transformers. We call them Diffusion Transform-
+ers, or DiTs for short. DiTs adhere to the best practices of
+Vision Transformers (ViTs) [10], which have been shown to
+scale more effectively for visual recognition than traditional
+convolutional networks (e.g., ResNet [15]).
+
+More speciﬁcally, we study the scaling behavior of trans-
+formers with respect to network complexity vs. sample
+quality.
+We show that by constructing and benchmark-
+ing the DiT design space under the Latent Diffusion Mod-
+els (LDMs) [48] framework, where diffusion models are
+trained within a VAE’s latent space, we can successfully
+replace the U-Net backbone with a transformer. We further
+show that DiTs are scalable architectures for diffusion mod-
+els: there is a strong correlation between the network com-
+plexity (measured by Gﬂops) vs. sample quality (measured
+by FID). By simply scaling-up DiT and training an LDM
+with a high-capacity backbone (118.6 Gﬂops), we are able
+to achieve a state-of-the-art result of 2.27 FID on the class-
+conditional 256 × 256 ImageNet generation benchmark.
+
+2. Related Work
+
+Transformers.
+Transformers [60] have replaced domain-
+speciﬁc architectures across language, vision [10], rein-
+forcement learning [5, 25] and meta-learning [39]. They
+have shown remarkable scaling properties under increas-
+ing model size, training compute and data in the language
+domain [26], as generic autoregressive models [17] and
+as ViTs [63]. Beyond language, transformers have been
+trained to autoregressively predict pixels [6, 7, 38]. They
+have also been trained on discrete codebooks [59] as both
+autoregressive models [11,47] and masked generative mod-
+els [4,14]; the former has shown excellent scaling behavior
+up to 20B parameters [62]. Finally, transformers have been
+explored in DDPMs to synthesize non-spatial data; e.g., to
+generate CLIP image embeddings in DALL·E 2 [41,46]. In
+this paper, we study the scaling properties of transformers
+when used as the backbone of diffusion models of images.
+
+2
+
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+[['',
+ '+ +\n'
+ 'Pointwise Pointwise\n'
+ 'Feedforward Feedforward\n'
+ 'Layer Norm Layer Norm\n'
+ '+ +\n'
+ 'Multi-Head\n'
+ 'Cross-Attention\n'
+ 'Multi-Head\n'
+ 'Layer Norm Self-Attention\n'
+ '+ Layer Norm\n'
+ 'Multi-Head\n'
+ 'Self-Attention Concatenate\n'
+ 'on Sequence\n'
+ 'Layer Norm Dimension\n'
+ 'Input Tokens Conditioning Input Tokens Conditioning\n'
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['+', '+ +'],
+ ['𝛼"', 'Pointwise Pointwise'],
+ ['Noise Σ Scale', 'Feedforward Feedforward'],
+ ['Pointwise', 'Layer Norm Layer Norm'],
+ ['32 x 32 x 4 32 x 32 x 4', '+ +'],
+ ['Feedforward', 'Multi-Head'],
+ ['𝛾",𝛽"', 'Cross-Attention'],
+ ['Linear and Reshape Scale, Shift', 'Multi-Head'],
+ ['Layer Norm', 'Layer Norm Self-Attention'],
+ ['Layer Norm', '+ Layer Norm'],
+ ['+', 'Multi-Head'],
+ ['N x DiT Block 𝛼!', 'Self-Attention Concatenate'],
+ ['Scale', 'on Sequence'],
+ ['Multi-Head', 'Layer Norm Dimension'],
+ ['Patchify Embed Self-Attention',
+ 'Input Tokens Conditioning Input Tokens Conditioning'],
+ ['𝛾!,𝛽!',
+ 'DiT Block with Cross-Attention DiT Block with In-Context Conditioning'],
+ ['Scale, Shift', ''],
+ ['Noised Timestep 𝑡 Layer Norm MLP', ''],
+ ['Latent', ''],
+ ['32 x 32 x 4 Label 𝑦 Input Tokens Conditioning', ''],
+ ['Latent Diffusion Transformer DiT Block with adaLN-Zero', ''],
+ ['', '']]
+Denoising diffusion probabilistic models (DDPMs).
+Diffusion [19, 54] and score-based generative models [22,
+56] have been particularly successful as generative models
+of images [35,46,48,50], in many cases outperforming gen-
+erative adversarial networks (GANs) [12] which had previ-
+ously been state-of-the-art. Improvements in DDPMs over
+the past two years have largely been driven by improved
+sampling techniques [19, 27, 55], most notably classiﬁer-
+free guidance [21], reformulating diffusion models to pre-
+dict noise instead of pixels [19] and using cascaded DDPM
+pipelines where low-resolution base diffusion models are
+trained in parallel with upsamplers [9, 20]. For all the dif-
+fusion models listed above, convolutional U-Nets [49] are
+the de-facto choice of backbone architecture. Concurrent
+work [24] introduced a novel, efﬁcient architecture based
+on attention for DDPMs; we explore pure transformers.
+Architecture complexity.
+When evaluating architecture
+complexity in the image generation literature, it is fairly
+common practice to use parameter counts. In general, pa-
+rameter counts can be poor proxies for the complexity of
+image models since they do not account for, e.g., image res-
+olution which signiﬁcantly impacts performance [44, 45].
+Instead, much of the model complexity analysis in this pa-
+per is through the lens of theoretical Gﬂops. This brings us
+in-line with the architecture design literature where Gﬂops
+are widely-used to gauge complexity.
+In practice, the
+golden complexity metric is still up for debate as it fre-
+quently depends on particular application scenarios. Nichol
+and Dhariwal’s seminal work improving diffusion mod-
+els [9, 36] is most related to us—there, they analyzed the
+scalability and Gﬂop properties of the U-Net architecture
+class. In this paper, we focus on the transformer class.
+
+3. Diffusion Transformers
+
+3.1. Preliminaries
+
+Diffusion models are trained to learn the reverse process
+that inverts forward process corruptions: pθ(xt−1|xt) =
+N(µθ(xt), Σθ(xt)), where neural networks are used to pre-
+dict the statistics of pθ.
+The reverse process model is
+trained with the variational lower bound [30] of the log-
+likelihood of x0, which reduces to L(θ) = −p(x0|x1) +
+P
+
+t DKL(q∗(xt−1|xt, x0)||pθ(xt−1|xt)), excluding an ad-
+ditional term irrelevant for training. Since both q∗and pθ
+are Gaussian, DKL can be evaluated with the mean and co-
+variance of the two distributions. By reparameterizing µθ as
+a noise prediction network ϵθ, the model can be trained us-
+ing simple mean-squared error between the predicted noise
+ϵθ(xt) and the ground truth sampled Gaussian noise ϵt:
+Lsimple(θ) = ||ϵθ(xt) −ϵt||2
+2. But, in order to train diffu-
+sion models with a learned reverse process covariance Σθ,
+the full DKL term needs to be optimized. We follow Nichol
+and Dhariwal’s approach [36]: train ϵθ with Lsimple, and
+train Σθ with the full L. Once pθ is trained, new images can
+be sampled by initializing xtmax ∼N(0, I) and sampling
+xt−1 ∼pθ(xt−1|xt) via the reparameterization trick.
+
+3
+
+Classiﬁer-free guidance.
+Conditional diffusion models
+take extra information as input, such as a class label c.
+In this case, the reverse process becomes pθ(xt−1|xt, c),
+where ϵθ and Σθ are conditioned on c.
+In this setting,
+classiﬁer-free guidance can be used to encourage the sam-
+pling procedure to ﬁnd x such that log p(c|x) is high [21].
+By Bayes Rule, log p(c|x) ∝log p(x|c) −log p(x), and
+hence ∇x log p(c|x) ∝∇x log p(x|c)−∇x log p(x). By in-
+terpreting the output of diffusion models as the score func-
+tion, the DDPM sampling procedure can be guided to sam-
+ple x with high p(x|c) by: ˆϵθ(xt, c) = ϵθ(xt, ∅) + s ·
+∇x log p(x|c) ∝ϵθ(xt, ∅)+s·(ϵθ(xt, c)−ϵθ(xt, ∅)), where
+s > 1 indicates the scale of the guidance (note that s = 1 re-
+covers standard sampling). Evaluating the diffusion model
+with c = ∅is done by randomly dropping out c during
+training and replacing it with a learned “null” embedding
+∅. Classiﬁer-free guidance is widely-known to yield sig-
+niﬁcantly improved samples over generic sampling tech-
+niques [21,35,46], and the trend holds for our DiT models.
+
+Latent diffusion models.
+Training diffusion models di-
+rectly in high-resolution pixel space can be computationally
+prohibitive. Latent diffusion models (LDMs) [48] tackle this
+issue with a two-stage approach: (1) learn an autoencoder
+that compresses images into smaller spatial representations
+with a learned encoder E; (2) train a diffusion model of
+representations z = E(x) instead of a diffusion model of
+images x (E is frozen). New images can then be generated
+by sampling a representation z from the diffusion model
+and subsequently decoding it to an image with the learned
+decoder x = D(z).
+As shown in Figure 2, LDMs achieve good performance
+while using a fraction of the Gﬂops of pixel space diffusion
+models like ADM. Since we are concerned with compute
+efﬁciency, this makes them an appealing starting point for
+architecture exploration. In this paper, we apply DiTs to
+latent space, although they could be applied to pixel space
+without modiﬁcation as well. This makes our image genera-
+tion pipeline a hybrid-based approach; we use off-the-shelf
+convolutional VAEs and transformer-based DDPMs.
+
+3.2. Diffusion Transformer Design Space
+
+We introduce Diffusion Transformers (DiTs), a new ar-
+chitecture for diffusion models. We aim to be as faithful to
+the standard transformer architecture as possible to retain
+its scaling properties. Since our focus is training DDPMs of
+images (speciﬁcally, spatial representations of images), DiT
+is based on the Vision Transformer (ViT) architecture which
+operates on sequences of patches [10]. DiT retains many of
+the best practices of ViTs. Figure 3 shows an overview of
+the complete DiT architecture. In this section, we describe
+the forward pass of DiT, as well as the components of the
+design space of the DiT class.
+
+[[None, None, None, '', None],
+ ['', '', '', '', '𝑝'],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[[None, None, None, '', None],
+ ['', '', '', '', '𝑝'],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[[None, None, None, '', None],
+ ['', '', '', '', '𝑝'],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[[None, None, None, '', None],
+ ['', '', '', '', '𝑝'],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', '𝑇= 𝐼/𝑝 !', '', '', '', '', '', '', '', '', '']]
+[[None, None, None, '', None],
+ ['', '', '', '', '𝑝'],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[[None, None, None, '', None],
+ ['', '', '', '', '𝑝'],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+Figure 4. Input speciﬁcations for DiT. Given patch size p × p,
+a spatial representation (the noised latent from the VAE) of shape
+I × I × C is “patchiﬁed” into a sequence of length T = (I/p)2
+
+with hidden dimension d. A smaller patch size p results in a longer
+sequence length and thus more Gﬂops.
+
+Patchify.
+The input to DiT is a spatial representation z
+(for 256 × 256 × 3 images, z has shape 32 × 32 × 4). The
+ﬁrst layer of DiT is “patchify,” which converts the spatial
+input into a sequence of T tokens, each of dimension d,
+by linearly embedding each patch in the input. Following
+patchify, we apply standard ViT frequency-based positional
+embeddings (the sine-cosine version) to all input tokens.
+The number of tokens T created by patchify is determined
+by the patch size hyperparameter p. As shown in Figure 4,
+halving p will quadruple T, and thus at least quadruple total
+transformer Gﬂops. Although it has a signiﬁcant impact on
+Gﬂops, note that changing p has no meaningful impact on
+downstream parameter counts.
+We add p = 2, 4, 8 to the DiT design space.
+
+DiT block design.
+Following patchify, the input tokens
+are processed by a sequence of transformer blocks. In ad-
+dition to noised image inputs, diffusion models sometimes
+process additional conditional information such as noise
+timesteps t, class labels c, natural language, etc. We explore
+four variants of transformer blocks that process conditional
+inputs differently. The designs introduce small, but impor-
+tant, modiﬁcations to the standard ViT block design. The
+designs of all blocks are shown in Figure 3.
+
+– In-context conditioning. We simply append the vec-
+tor embeddings of t and c as two additional tokens in
+the input sequence, treating them no differently from
+the image tokens. This is similar to cls tokens in
+ViTs, and it allows us to use standard ViT blocks with-
+out modiﬁcation. After the ﬁnal block, we remove the
+conditioning tokens from the sequence. This approach
+introduces negligible new Gﬂops to the model.
+
+4
+
+[['', '', '', '', ''],
+ ['', '', 'XL/2 In', '-Context', ''],
+ ['', '', 'XL/2 C', 'ross-Attention', ''],
+ ['', '', 'XL/2 a', 'daLN', ''],
+ ['', '', 'XL/2 a', 'daLN-Zero', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', '', '', ''],
+ ['', '', 'XL/2 In', '-Context', ''],
+ ['', '', 'XL/2 C', 'ross-Attention', ''],
+ ['', '', 'XL/2 a', 'daLN', ''],
+ ['', '', 'XL/2 a', 'daLN-Zero', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', '', '', ''],
+ ['', '', 'XL/2 In', '-Context', ''],
+ ['', '', 'XL/2 C', 'ross-Attention', ''],
+ ['', '', 'XL/2 a', 'daLN', ''],
+ ['', '', 'XL/2 a', 'daLN-Zero', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', '', '', ''],
+ ['', '', 'XL/2 In', '-Context', ''],
+ ['', '', 'XL/2 C', 'ross-Attention', ''],
+ ['', '', 'XL/2 a', 'daLN', ''],
+ ['', '', 'XL/2 a', 'daLN-Zero', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', '', '', ''],
+ ['', '', 'XL/2 In', '-Context', ''],
+ ['', '', 'XL/2 C', 'ross-Attention', ''],
+ ['', '', 'XL/2 a', 'daLN', ''],
+ ['', '', 'XL/2 a', 'daLN-Zero', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', '', '', ''],
+ ['', '', 'XL/2 In', '-Context', ''],
+ ['', '', 'XL/2 C', 'ross-Attention', ''],
+ ['', '', 'XL/2 a', 'daLN', ''],
+ ['', '', 'XL/2 a', 'daLN-Zero', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', '', '', ''],
+ ['', '', 'XL/2 In', '-Context', ''],
+ ['', '', 'XL/2 C', 'ross-Attention', ''],
+ ['', '', 'XL/2 a', 'daLN', ''],
+ ['', '', 'XL/2 a', 'daLN-Zero', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+Figure 5. Comparing different conditioning strategies. adaLN-
+Zero outperforms cross-attention and in-context conditioning at all
+stages of training.
+
+– Cross-attention block. We concatenate the embeddings
+of t and c into a length-two sequence, separate from
+the image token sequence. The transformer block is
+modiﬁed to include an additional multi-head cross-
+attention layer following the multi-head self-attention
+block, similar to the original design from Vaswani et
+al. [60], and also similar to the one used by LDM for
+conditioning on class labels. Cross-attention adds the
+most Gﬂops to the model, roughly a 15% overhead.
+
+– Adaptive layer norm (adaLN) block.
+Following
+the widespread usage of adaptive normalization lay-
+ers [40] in GANs [2,28] and diffusion models with U-
+Net backbones [9], we explore replacing standard layer
+norm layers in transformer blocks with adaptive layer
+norm (adaLN). Rather than directly learn dimension-
+wise scale and shift parameters γ and β, we regress
+them from the sum of the embedding vectors of t and
+c. Of the three block designs we explore, adaLN adds
+the least Gﬂops and is thus the most compute-efﬁcient.
+It is also the only conditioning mechanism that is re-
+stricted to apply the same function to all tokens.
+
+– adaLN-Zero block. Prior work on ResNets has found
+that initializing each residual block as the identity
+function is beneﬁcial. For example, Goyal et al. found
+that zero-initializing the ﬁnal batch norm scale factor γ
+in each block accelerates large-scale training in the su-
+pervised learning setting [13]. Diffusion U-Net mod-
+els use a similar initialization strategy, zero-initializing
+the ﬁnal convolutional layer in each block prior to any
+residual connections.
+We explore a modiﬁcation of
+the adaLN DiT block which does the same. In addi-
+tion to regressing γ and β, we also regress dimension-
+wise scaling parameters α that are applied immediately
+prior to any residual connections within the DiT block.
+
+Table 1. Details of DiT models. We follow ViT [10] model con-
+ﬁgurations for the Small (S), Base (B) and Large (L) variants; we
+also introduce an XLarge (XL) conﬁg as our largest model.
+
+We initialize the MLP to output the zero-vector for all
+α; this initializes the full DiT block as the identity
+function. As with the vanilla adaLN block, adaLN-
+Zero adds negligible Gﬂops to the model.
+
+We include the in-context, cross-attention, adaptive layer
+norm and adaLN-Zero blocks in the DiT design space.
+
+Model size.
+We apply a sequence of N DiT blocks, each
+operating at the hidden dimension size d. Following ViT,
+we use standard transformer conﬁgs that jointly scale N,
+d and attention heads [10, 63]. Speciﬁcally, we use four
+conﬁgs: DiT-S, DiT-B, DiT-L and DiT-XL. They cover a
+wide range of model sizes and ﬂop allocations, from 0.3
+to 118.6 Gﬂops, allowing us to gauge scaling performance.
+Table 1 gives details of the conﬁgs.
+We add B, S, L and XL conﬁgs to the DiT design space.
+
+Transformer decoder.
+After the ﬁnal DiT block, we need
+to decode our sequence of image tokens into an output noise
+prediction and an output diagonal covariance prediction.
+Both of these outputs have shape equal to the original spa-
+tial input. We use a standard linear decoder to do this; we
+apply the ﬁnal layer norm (adaptive if using adaLN) and lin-
+early decode each token into a p×p×2C tensor, where C is
+the number of channels in the spatial input to DiT. Finally,
+we rearrange the decoded tokens into their original spatial
+layout to get the predicted noise and covariance.
+The complete DiT design space we explore is patch size,
+transformer block architecture and model size.
+
+4. Experimental Setup
+
+We explore the DiT design space and study the scaling
+properties of our model class. Our models are named ac-
+cording to their conﬁgs and latent patch sizes p; for exam-
+ple, DiT-XL/2 refers to the XLarge conﬁg and p = 2.
+
+Training.
+We train class-conditional latent DiT models at
+256 × 256 and 512 × 512 image resolution on the Ima-
+geNet dataset [31], a highly-competitive generative mod-
+eling benchmark. We initialize the ﬁnal linear layer with
+zeros and otherwise use standard weight initialization tech-
+niques from ViT. We train all models with AdamW [29,33].
+
+5
+
+Figure 6. Scaling the DiT model improves FID at all stages of training. We show FID-50K over training iterations for 12 of our DiT
+models. Top row: We compare FID holding patch size constant. Bottom row: We compare FID holding model size constant. Scaling the
+transformer backbone yields better generative models across all model sizes and patch sizes.
+
+We use a constant learning rate of 1 × 10−4, no weight de-
+cay and a batch size of 256. The only data augmentation
+we use is horizontal ﬂips. Unlike much prior work with
+ViTs [57, 61], we did not ﬁnd learning rate warmup nor
+regularization necessary to train DiTs to high performance.
+Even without these techniques, training was highly stable
+across all model conﬁgs and we did not observe any loss
+spikes commonly seen when training transformers. Follow-
+ing common practice in the generative modeling literature,
+we maintain an exponential moving average (EMA) of DiT
+weights over training with a decay of 0.9999. All results
+reported use the EMA model. We use identical training hy-
+perparameters across all DiT model sizes and patch sizes.
+Our training hyperparameters are almost entirely retained
+from ADM. We did not tune learning rates, decay/warm-up
+schedules, Adam β1/β2 or weight decays.
+
+Diffusion.
+We use an off-the-shelf pre-trained variational
+autoencoder (VAE) model [30] from Stable Diffusion [48].
+The VAE encoder has a downsample factor of 8—given an
+RGB image x with shape 256 × 256 × 3, z = E(x) has
+shape 32 × 32 × 4. Across all experiments in this section,
+our diffusion models operate in this Z-space. After sam-
+pling a new latent from our diffusion model, we decode it
+to pixels using the VAE decoder x = D(z). We retain diffu-
+sion hyperparameters from ADM [9]; speciﬁcally, we use a
+tmax = 1000 linear variance schedule ranging from 1×10−4
+
+to 2 × 10−2, ADM’s parameterization of the covariance Σθ
+and their method for embedding input timesteps and labels.
+
+Evaluation metrics.
+We measure scaling performance
+with Fr´echet Inception Distance (FID) [18], the standard
+metric for evaluating generative models of images.
+
+We follow convention when comparing against prior works
+and report FID-50K using 250 DDPM sampling steps.
+FID is known to be sensitive to small implementation de-
+tails [37]; to ensure accurate comparisons, all values re-
+ported in this paper are obtained by exporting samples and
+using ADM’s TensorFlow evaluation suite [9]. FID num-
+bers reported in this section do not use classiﬁer-free guid-
+ance except where otherwise stated. We additionally report
+Inception Score [51], sFID [34] and Precision/Recall [32]
+as secondary metrics.
+
+Compute.
+We implement all models in JAX [1] and train
+them using TPU-v3 pods. DiT-XL/2, our most compute-
+intensive model, trains at roughly 5.7 iterations/second on a
+TPU v3-256 pod with a global batch size of 256.
+
+5. Experiments
+
+DiT block design.
+We train four of our highest Gﬂop
+DiT-XL/2 models, each using a different block design—
+in-context (119.4 Gﬂops), cross-attention (137.6 Gﬂops),
+adaptive layer norm (adaLN, 118.6 Gﬂops) or adaLN-zero
+(118.6 Gﬂops). We measure FID over the course of training.
+Figure 5 shows the results. The adaLN-Zero block yields
+lower FID than both cross-attention and in-context condi-
+tioning while being the most compute-efﬁcient. At 400K
+training iterations, the FID achieved with the adaLN-Zero
+model is nearly half that of the in-context model, demon-
+strating that the conditioning mechanism critically affects
+model quality.
+Initialization is also important—adaLN-
+Zero, which initializes each DiT block as the identity func-
+tion, signiﬁcantly outperforms vanilla adaLN. For the rest
+of the paper, all models will use adaLN-Zero DiT blocks.
+
+6
+
+Figure 7. Increasing transformer forward pass Gﬂops increases sample quality. Best viewed zoomed-in. We sample from all 12 of
+our DiT models after 400K training steps using the same input latent noise and class label. Increasing the Gﬂops in the model—either by
+increasing transformer depth/width or increasing the number of input tokens—yields signiﬁcant improvements in visual ﬁdelity.
+
+7
+
+[['', 'S/2', 'B/2 L/2 X'],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['Correla', 'tion: -0.93', ''],
+ ['', '', '']]
+[['', 'S/2', 'B/2 L/2 X'],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['Correla', 'tion: -0.93', ''],
+ ['', '', '']]
+[['', 'S/2', 'B/2 L/2 X'],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['Correla', 'tion: -0.93', ''],
+ ['', '', '']]
+[['', 'S/2', 'B/2 L/2 X'],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['Correla', 'tion: -0.93', ''],
+ ['', '', '']]
+[['', 'S/2', 'B/2 L/2 X'],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['Correla', 'tion: -0.93', ''],
+ ['', '', '']]
+[['', 'S/2', 'B/2 L/2 X'],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['Correla', 'tion: -0.93', ''],
+ ['', '', '']]
+[['', 'S/2', 'B/2 L/2 X'],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['Correla', 'tion: -0.93', ''],
+ ['', '', '']]
+[['', 'S/2', 'B/2 L/2 X'],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['Correla', 'tion: -0.93', ''],
+ ['', '', '']]
+[['', 'S/2', 'B/2 L/2 X'],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['Correla', 'tion: -0.93', ''],
+ ['', '', '']]
+[['', 'S/2', 'B/2 L/2 X'],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['Correla', 'tion: -0.93', ''],
+ ['', '', '']]
+[['', 'S/2', 'B/2 L/2 X'],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['Correla', 'tion: -0.93', ''],
+ ['', '', '']]
+[['', 'S/2', 'B/2 L/2 X'],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['Correla', 'tion: -0.93', ''],
+ ['', '', '']]
+[['', 'S/2', 'B/2 L/2 X'],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['', '', ''],
+ ['Correla', 'tion: -0.93', ''],
+ ['', '', '']]
+Figure 8. Transformer Gﬂops are strongly correlated with FID.
+We plot the Gﬂops of each of our DiT models and each model’s
+FID-50K after 400K training steps.
+
+Scaling model size and patch size.
+We train 12 DiT mod-
+els, sweeping over model conﬁgs (S, B, L, XL) and patch
+sizes (8, 4, 2). Note that DiT-L and DiT-XL are signiﬁcantly
+closer to each other in terms of relative Gﬂops than other
+conﬁgs. Figure 2 (left) gives an overview of the Gﬂops of
+each model and their FID at 400K training iterations. In
+all cases, we ﬁnd that increasing model size and decreasing
+patch size yields considerably improved diffusion models.
+Figure 6 (top) demonstrates how FID changes as model
+size is increased and patch size is held constant. Across all
+four conﬁgs, signiﬁcant improvements in FID are obtained
+over all stages of training by making the transformer deeper
+and wider. Similarly, Figure 6 (bottom) shows FID as patch
+size is decreased and model size is held constant. We again
+observe considerable FID improvements throughout train-
+ing by simply scaling the number of tokens processed by
+DiT, holding parameters approximately ﬁxed.
+
+DiT Gﬂops are critical to improving performance.
+The
+results of Figure 6 suggest that parameter counts do not
+uniquely determine the quality of a DiT model. As model
+size is held constant and patch size is decreased, the trans-
+former’s total parameters are effectively unchanged (actu-
+ally, total parameters slightly decrease), and only Gﬂops are
+increased. These results indicate that scaling model Gﬂops
+is actually the key to improved performance. To investi-
+gate this further, we plot the FID-50K at 400K training steps
+against model Gﬂops in Figure 8. The results demonstrate
+that different DiT conﬁgs obtain similar FID values when
+their total Gﬂops are similar (e.g., DiT-S/2 and DiT-B/4).
+We ﬁnd a strong negative correlation between model Gﬂops
+and FID-50K, suggesting that additional model compute is
+the critical ingredient for improved DiT models. In Fig-
+ure 12 (appendix), we ﬁnd that this trend holds for other
+metrics such as Inception Score.
+
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+[['', '', 'S/2', 'B/2\n30', 'L/2 XL'],
+ ['', '', '', '25', ''],
+ ['', '', '', '20', ''],
+ ['', '', '', '15', ''],
+ ['', '', '', '10', ''],
+ ['', '', '', '', ''],
+ ['', '', '', '', '']]
+Figure 9.
+Larger DiT models use large compute more efﬁ-
+ciently. We plot FID as a function of total training compute.
+
+Larger DiT models are more compute-efﬁcient. In
+Figure 9, we plot FID as a function of total training compute
+for all DiT models. We estimate training compute as model
+Gﬂops · batch size · training steps · 3, where the factor of
+3 roughly approximates the backwards pass as being twice
+as compute-heavy as the forward pass. We ﬁnd that small
+DiT models, even when trained longer, eventually become
+compute-inefﬁcient relative to larger DiT models trained for
+fewer steps. Similarly, we ﬁnd that models that are identi-
+cal except for patch size have different performance proﬁles
+even when controlling for training Gﬂops. For example,
+XL/4 is outperformed by XL/2 after roughly 1010 Gﬂops.
+
+Visualizing scaling.
+We visualize the effect of scaling on
+sample quality in Figure 7. At 400K training steps, we sam-
+ple an image from each of our 12 DiT models using iden-
+tical starting noise xtmax, sampling noise and class labels.
+This lets us visually interpret how scaling affects DiT sam-
+ple quality. Indeed, scaling both model size and the number
+of tokens yields notable improvements in visual quality.
+
+5.1. State-of-the-Art Diffusion Models
+
+256×256 ImageNet.
+Following our scaling analysis, we
+continue training our highest Gﬂop model, DiT-XL/2, for
+7M steps. We show samples from the model in Figures 1,
+and we compare against state-of-the-art class-conditional
+generative models. We report results in Table 2. When us-
+ing classiﬁer-free guidance, DiT-XL/2 outperforms all prior
+diffusion models, decreasing the previous best FID-50K of
+3.60 achieved by LDM to 2.27. Figure 2 (right) shows that
+DiT-XL/2 (118.6 Gﬂops) is compute-efﬁcient relative to la-
+tent space U-Net models like LDM-4 (103.6 Gﬂops) and
+substantially more efﬁcient than pixel space U-Net mod-
+els such as ADM (1120 Gﬂops) or ADM-U (742 Gﬂops).
+
+8
+
+Table 2. Benchmarking class-conditional image generation on
+ImageNet 256×256. DiT-XL/2 achieves state-of-the-art FID.
+
+Table 3. Benchmarking class-conditional image generation on
+ImageNet 512×512. Note that prior work [9] measures Precision
+and Recall using 1000 real samples for 512 × 512 resolution; for
+consistency, we do the same.
+
+Our method achieves the lowest FID of all prior generative
+models, including the previous state-of-the-art StyleGAN-
+XL [53]. Finally, we also observe that DiT-XL/2 achieves
+higher recall values at all tested classiﬁer-free guidance
+scales compared to LDM-4 and LDM-8. When trained for
+only 2.35M steps (similar to ADM), XL/2 still outperforms
+all prior diffusion models with an FID of 2.55.
+
+512×512 ImageNet.
+We train a new DiT-XL/2 model on
+ImageNet at 512 × 512 resolution for 3M iterations with
+identical hyperparameters as the 256 × 256 model. With a
+patch size of 2, this XL/2 model processes a total of 1024
+tokens after patchifying the 64 × 64 × 4 input latent (524.6
+Gﬂops). Table 3 shows comparisons against state-of-the-art
+methods. XL/2 again outperforms all prior diffusion models
+at this resolution, improving the previous best FID of 3.85
+achieved by ADM to 3.04. Even with the increased num-
+ber of tokens, XL/2 remains compute-efﬁcient. For exam-
+ple, ADM uses 1983 Gﬂops and ADM-U uses 2813 Gﬂops;
+XL/2 uses 524.6 Gﬂops. We show samples from the high-
+resolution XL/2 model in Figure 1 and the appendix.
+
+[['S/4 B/4 L/4 X\n'
+ '160 S/2 B/2 L/2 X\n'
+ '140\n'
+ '120\n'
+ 'FID-10K\n'
+ '100\n'
+ '80\n'
+ '60\n'
+ '40\n'
+ '20\n'
+ '101 102 103 104 10\n'
+ 'Sampling Compute (Gflops)',
+ '',
+ '',
+ '',
+ 'S/\nS/',
+ '4 B/4\n2 B/2',
+ 'L/4 X\nL/2 X'],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', '4']]
+[['S/4 B/4 L/4 X\n'
+ '160 S/2 B/2 L/2 X\n'
+ '140\n'
+ '120\n'
+ 'FID-10K\n'
+ '100\n'
+ '80\n'
+ '60\n'
+ '40\n'
+ '20\n'
+ '101 102 103 104 10\n'
+ 'Sampling Compute (Gflops)',
+ '',
+ '',
+ '',
+ 'S/\nS/',
+ '4 B/4\n2 B/2',
+ 'L/4 X\nL/2 X'],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', '4']]
+[['S/4 B/4 L/4 X\n'
+ '160 S/2 B/2 L/2 X\n'
+ '140\n'
+ '120\n'
+ 'FID-10K\n'
+ '100\n'
+ '80\n'
+ '60\n'
+ '40\n'
+ '20\n'
+ '101 102 103 104 10\n'
+ 'Sampling Compute (Gflops)',
+ '',
+ '',
+ '',
+ 'S/\nS/',
+ '4 B/4\n2 B/2',
+ 'L/4 X\nL/2 X'],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', '4']]
+[['S/4 B/4 L/4 X\n'
+ '160 S/2 B/2 L/2 X\n'
+ '140\n'
+ '120\n'
+ 'FID-10K\n'
+ '100\n'
+ '80\n'
+ '60\n'
+ '40\n'
+ '20\n'
+ '101 102 103 104 10\n'
+ 'Sampling Compute (Gflops)',
+ '',
+ '',
+ '',
+ 'S/\nS/',
+ '4 B/4\n2 B/2',
+ 'L/4 X\nL/2 X'],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', '4']]
+[['S/4 B/4 L/4 X\n'
+ '160 S/2 B/2 L/2 X\n'
+ '140\n'
+ '120\n'
+ 'FID-10K\n'
+ '100\n'
+ '80\n'
+ '60\n'
+ '40\n'
+ '20\n'
+ '101 102 103 104 10\n'
+ 'Sampling Compute (Gflops)',
+ '',
+ '',
+ '',
+ 'S/\nS/',
+ '4 B/4\n2 B/2',
+ 'L/4 X\nL/2 X'],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', '4']]
+[['S/4 B/4 L/4 X\n'
+ '160 S/2 B/2 L/2 X\n'
+ '140\n'
+ '120\n'
+ 'FID-10K\n'
+ '100\n'
+ '80\n'
+ '60\n'
+ '40\n'
+ '20\n'
+ '101 102 103 104 10\n'
+ 'Sampling Compute (Gflops)',
+ '',
+ '',
+ '',
+ 'S/\nS/',
+ '4 B/4\n2 B/2',
+ 'L/4 X\nL/2 X'],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', '4']]
+[['S/4 B/4 L/4 X\n'
+ '160 S/2 B/2 L/2 X\n'
+ '140\n'
+ '120\n'
+ 'FID-10K\n'
+ '100\n'
+ '80\n'
+ '60\n'
+ '40\n'
+ '20\n'
+ '101 102 103 104 10\n'
+ 'Sampling Compute (Gflops)',
+ '',
+ '',
+ '',
+ 'S/\nS/',
+ '4 B/4\n2 B/2',
+ 'L/4 X\nL/2 X'],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', '4']]
+[['S/4 B/4 L/4 X\n'
+ '160 S/2 B/2 L/2 X\n'
+ '140\n'
+ '120\n'
+ 'FID-10K\n'
+ '100\n'
+ '80\n'
+ '60\n'
+ '40\n'
+ '20\n'
+ '101 102 103 104 10\n'
+ 'Sampling Compute (Gflops)',
+ '',
+ '',
+ '',
+ 'S/\nS/',
+ '4 B/4\n2 B/2',
+ 'L/4 X\nL/2 X'],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', '4']]
+[['S/4 B/4 L/4 X\n'
+ '160 S/2 B/2 L/2 X\n'
+ '140\n'
+ '120\n'
+ 'FID-10K\n'
+ '100\n'
+ '80\n'
+ '60\n'
+ '40\n'
+ '20\n'
+ '101 102 103 104 10\n'
+ 'Sampling Compute (Gflops)',
+ '',
+ '',
+ '',
+ 'S/\nS/',
+ '4 B/4\n2 B/2',
+ 'L/4 X\nL/2 X'],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', '4']]
+[['S/4 B/4 L/4 X\n'
+ '160 S/2 B/2 L/2 X\n'
+ '140\n'
+ '120\n'
+ 'FID-10K\n'
+ '100\n'
+ '80\n'
+ '60\n'
+ '40\n'
+ '20\n'
+ '101 102 103 104 10\n'
+ 'Sampling Compute (Gflops)',
+ '',
+ '',
+ '',
+ 'S/\nS/',
+ '4 B/4\n2 B/2',
+ 'L/4 X\nL/2 X'],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', '4']]
+[['S/4 B/4 L/4 X\n'
+ '160 S/2 B/2 L/2 X\n'
+ '140\n'
+ '120\n'
+ 'FID-10K\n'
+ '100\n'
+ '80\n'
+ '60\n'
+ '40\n'
+ '20\n'
+ '101 102 103 104 10\n'
+ 'Sampling Compute (Gflops)',
+ '',
+ '',
+ '',
+ 'S/\nS/',
+ '4 B/4\n2 B/2',
+ 'L/4 X\nL/2 X'],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', '4']]
+[['S/4 B/4 L/4 X\n'
+ '160 S/2 B/2 L/2 X\n'
+ '140\n'
+ '120\n'
+ 'FID-10K\n'
+ '100\n'
+ '80\n'
+ '60\n'
+ '40\n'
+ '20\n'
+ '101 102 103 104 10\n'
+ 'Sampling Compute (Gflops)',
+ '',
+ '',
+ '',
+ 'S/\nS/',
+ '4 B/4\n2 B/2',
+ 'L/4 X\nL/2 X'],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', '4']]
+[['S/4 B/4 L/4 X\n'
+ '160 S/2 B/2 L/2 X\n'
+ '140\n'
+ '120\n'
+ 'FID-10K\n'
+ '100\n'
+ '80\n'
+ '60\n'
+ '40\n'
+ '20\n'
+ '101 102 103 104 10\n'
+ 'Sampling Compute (Gflops)',
+ '',
+ '',
+ '',
+ 'S/\nS/',
+ '4 B/4\n2 B/2',
+ 'L/4 X\nL/2 X'],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', '4']]
+[['S/4 B/4 L/4 X\n'
+ '160 S/2 B/2 L/2 X\n'
+ '140\n'
+ '120\n'
+ 'FID-10K\n'
+ '100\n'
+ '80\n'
+ '60\n'
+ '40\n'
+ '20\n'
+ '101 102 103 104 10\n'
+ 'Sampling Compute (Gflops)',
+ '',
+ '',
+ '',
+ 'S/\nS/',
+ '4 B/4\n2 B/2',
+ 'L/4 X\nL/2 X'],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', '4']]
+[['S/4 B/4 L/4 X\n'
+ '160 S/2 B/2 L/2 X\n'
+ '140\n'
+ '120\n'
+ 'FID-10K\n'
+ '100\n'
+ '80\n'
+ '60\n'
+ '40\n'
+ '20\n'
+ '101 102 103 104 10\n'
+ 'Sampling Compute (Gflops)',
+ '',
+ '',
+ '',
+ 'S/\nS/',
+ '4 B/4\n2 B/2',
+ 'L/4 X\nL/2 X'],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', '4']]
+[['S/4 B/4 L/4 X\n'
+ '160 S/2 B/2 L/2 X\n'
+ '140\n'
+ '120\n'
+ 'FID-10K\n'
+ '100\n'
+ '80\n'
+ '60\n'
+ '40\n'
+ '20\n'
+ '101 102 103 104 10\n'
+ 'Sampling Compute (Gflops)',
+ '',
+ '',
+ '',
+ 'S/\nS/',
+ '4 B/4\n2 B/2',
+ 'L/4 X\nL/2 X'],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', ''],
+ ['', '', '', '', '', '', '4']]
+Figure 10. Scaling-up sampling compute does not compensate
+for a lack of model compute. For each of our DiT models trained
+for 400K iterations, we compute FID-10K using [16, 32, 64, 128,
+256, 1000] sampling steps. For each number of steps, we plot the
+FID as well as the Gﬂops used to sample each image. Small mod-
+els cannot close the performance gap with our large models, even
+if they sample with more test-time Gﬂops than the large models.
+
+5.2. Scaling Model vs. Sampling Compute
+
+Diffusion models are unique in that they can use addi-
+tional compute after training by increasing the number of
+sampling steps when generating an image. Given the im-
+pact of model Gﬂops on sample quality, in this section we
+study if smaller-model compute DiTs can outperform larger
+ones by using more sampling compute. We compute FID
+for all 12 of our DiT models after 400K training steps, us-
+ing [16, 32, 64, 128, 256, 1000] sampling steps per-image.
+The main results are in Figure 10. Consider DiT-L/2 us-
+ing 1000 sampling steps versus DiT-XL/2 using 128 steps.
+In this case, L/2 uses 80.7 Tﬂops to sample each image;
+XL/2 uses 5× less compute—15.2 Tﬂops—to sample each
+image. Nonetheless, XL/2 has the better FID-10K (23.7
+vs 25.9). In general, scaling-up sampling compute cannot
+compensate for a lack of model compute.
+
+6. Conclusion
+
+We introduce Diffusion Transformers (DiTs), a simple
+transformer-based backbone for diffusion models that out-
+performs prior U-Net models and inherits the excellent scal-
+ing properties of the transformer model class. Given the
+promising scaling results in this paper, future work should
+continue to scale DiTs to larger models and token counts.
+DiT could also be explored as a drop-in backbone for text-
+to-image models like DALL·E 2 and Stable Diffusion.
+
+Acknowledgements.
+We thank Kaiming He, Ronghang
+Hu, Alexander Berg, Shoubhik Debnath, Tim Brooks, Ilija
+Radosavovic and Tete Xiao for helpful discussions. William
+Peebles is supported by the NSF GRFP.
+
+9
+
+References
+
+[1] James
+Bradbury,
+Roy
+Frostig,
+Peter
+Hawkins,
+Matthew James Johnson, Chris Leary, Dougal Maclau-
+rin, George Necula, Adam Paszke, Jake VanderPlas, Skye
+Wanderman-Milne, and Qiao Zhang.
+JAX: composable
+transformations of Python+NumPy programs, 2018. 6
+[2] Andrew Brock, Jeff Donahue, and Karen Simonyan. Large
+scale GAN training for high ﬁdelity natural image synthesis.
+In ICLR, 2019. 5, 9
+[3] Tom B Brown, Benjamin Mann, Nick Ryder, Melanie Sub-
+biah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan,
+Pranav Shyam, Girish Sastry, Amanda Askell, et al. Lan-
+guage models are few-shot learners. In NeurIPS, 2020. 1
+[4] Huiwen Chang, Han Zhang, Lu Jiang, Ce Liu, and William T
+Freeman. Maskgit: Masked generative image transformer. In
+CVPR, pages 11315–11325, 2022. 2
+[5] Lili Chen, Kevin Lu, Aravind Rajeswaran, Kimin Lee,
+Aditya Grover, Misha Laskin, Pieter Abbeel, Aravind Srini-
+vas, and Igor Mordatch. Decision transformer: Reinforce-
+ment learning via sequence modeling. In NeurIPS, 2021. 2
+[6] Mark Chen, Alec Radford, Rewon Child, Jeffrey Wu, Hee-
+woo Jun, David Luan, and Ilya Sutskever. Generative pre-
+training from pixels. In ICML, 2020. 1, 2
+[7] Rewon Child, Scott Gray, Alec Radford, and Ilya Sutskever.
+Generating long sequences with sparse transformers. arXiv
+preprint arXiv:1904.10509, 2019. 2
+[8] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina
+Toutanova. Bert: Pre-training of deep bidirectional trans-
+formers for language understanding. In NAACL-HCT, 2019.
+1
+[9] Prafulla Dhariwal and Alexander Nichol. Diffusion models
+beat gans on image synthesis. In NeurIPS, 2021. 1, 2, 3, 5,
+6, 9, 12
+[10] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov,
+Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner,
+Mostafa Dehghani, Matthias Minderer, Georg Heigold, Syl-
+vain Gelly, et al. An image is worth 16x16 words: Trans-
+formers for image recognition at scale. In ICLR, 2020. 1, 2,
+4, 5
+[11] Patrick Esser, Robin Rombach, and Bj¨orn Ommer. Taming
+transformers for high-resolution image synthesis, 2020. 2
+[12] Ian Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing
+Xu, David Warde-Farley, Sherjil Ozair, Aaron Courville, and
+Yoshua Bengio. Generative adversarial nets. In NIPS, 2014.
+3
+[13] Priya Goyal, Piotr Doll´ar, Ross Girshick, Pieter Noord-
+huis, Lukasz Wesolowski, Aapo Kyrola, Andrew Tulloch,
+Yangqing Jia, and Kaiming He. Accurate, large minibatch
+sgd: Training imagenet in 1 hour. arXiv:1706.02677, 2017.
+5
+[14] Shuyang Gu, Dong Chen, Jianmin Bao, Fang Wen, Bo
+Zhang, Dongdong Chen, Lu Yuan, and Baining Guo. Vec-
+tor quantized diffusion model for text-to-image synthesis. In
+CVPR, pages 10696–10706, 2022. 2
+[15] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun.
+Deep residual learning for image recognition.
+In CVPR,
+2016. 2
+
+[16] Dan Hendrycks and Kevin Gimpel.
+Gaussian error linear
+units (gelus). arXiv preprint arXiv:1606.08415, 2016. 12
+[17] Tom Henighan, Jared Kaplan, Mor Katz, Mark Chen,
+Christopher Hesse, Jacob Jackson, Heewoo Jun, Tom B
+Brown, Prafulla Dhariwal, Scott Gray, et al. Scaling laws
+for autoregressive generative modeling.
+arXiv preprint
+arXiv:2010.14701, 2020. 2
+[18] Martin Heusel, Hubert Ramsauer, Thomas Unterthiner,
+Bernhard Nessler, and Sepp Hochreiter. Gans trained by a
+two time-scale update rule converge to a local nash equilib-
+rium. 2017. 6
+[19] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffu-
+sion probabilistic models. In NeurIPS, 2020. 2, 3
+[20] Jonathan Ho, Chitwan Saharia, William Chan, David J
+Fleet, Mohammad Norouzi, and Tim Salimans.
+Cas-
+caded diffusion models for high ﬁdelity image generation.
+arXiv:2106.15282, 2021. 3, 9
+[21] Jonathan Ho and Tim Salimans.
+Classiﬁer-free diffusion
+guidance. In NeurIPS 2021 Workshop on Deep Generative
+Models and Downstream Applications, 2021. 3, 4
+[22] Aapo Hyv¨arinen and Peter Dayan.
+Estimation of non-
+normalized statistical models by score matching.
+Journal
+of Machine Learning Research, 6(4), 2005. 3
+[23] Phillip Isola, Jun-Yan Zhu, Tinghui Zhou, and Alexei A
+Efros. Image-to-image translation with conditional adver-
+sarial networks. In Proceedings of the IEEE conference on
+computer vision and pattern recognition, pages 1125–1134,
+2017. 2
+[24] Allan Jabri, David Fleet, and Ting Chen.
+Scalable adap-
+tive computation for iterative generation.
+arXiv preprint
+arXiv:2212.11972, 2022. 3
+[25] Michael Janner, Qiyang Li, and Sergey Levine. Ofﬂine rein-
+forcement learning as one big sequence modeling problem.
+In NeurIPS, 2021. 2
+[26] Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B
+Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec
+Radford, Jeffrey Wu, and Dario Amodei. Scaling laws for
+neural language models. arXiv:2001.08361, 2020. 2, 13
+[27] Tero Karras, Miika Aittala, Timo Aila, and Samuli Laine.
+Elucidating the design space of diffusion-based generative
+models. In Proc. NeurIPS, 2022. 3
+[28] Tero Karras, Samuli Laine, and Timo Aila. A style-based
+generator architecture for generative adversarial networks. In
+CVPR, 2019. 5
+[29] Diederik Kingma and Jimmy Ba.
+Adam: A method for
+stochastic optimization. In ICLR, 2015. 5
+[30] Diederik P Kingma and Max Welling. Auto-encoding varia-
+tional bayes. arXiv preprint arXiv:1312.6114, 2013. 3, 6
+[31] Alex Krizhevsky, Ilya Sutskever, and Geoffrey E Hinton.
+Imagenet classiﬁcation with deep convolutional neural net-
+works. In NeurIPS, 2012. 5
+[32] Tuomas Kynk¨a¨anniemi, Tero Karras, Samuli Laine, Jaakko
+Lehtinen, and Timo Aila. Improved precision and recall met-
+ric for assessing generative models. In NeurIPS, 2019. 6
+[33] Ilya Loshchilov and Frank Hutter. Decoupled weight decay
+regularization. arXiv:1711.05101, 2017. 5
+
+10
+
+[34] Charlie Nash, Jacob Menick, Sander Dieleman, and Peter W
+Battaglia.
+Generating images with sparse representations.
+arXiv preprint arXiv:2103.03841, 2021. 6
+[35] Alex Nichol, Prafulla Dhariwal, Aditya Ramesh, Pranav
+Shyam, Pamela Mishkin, Bob McGrew, Ilya Sutskever,
+and Mark Chen.
+Glide:
+Towards photorealistic image
+generation and editing with text-guided diffusion models.
+arXiv:2112.10741, 2021. 3, 4
+[36] Alexander Quinn Nichol and Prafulla Dhariwal. Improved
+denoising diffusion probabilistic models. In ICML, 2021. 3
+[37] Gaurav Parmar, Richard Zhang, and Jun-Yan Zhu.
+On
+aliased resizing and surprising subtleties in gan evaluation.
+In CVPR, 2022. 6
+[38] Niki Parmar, Ashish Vaswani, Jakob Uszkoreit, Lukasz
+Kaiser, Noam Shazeer, Alexander Ku, and Dustin Tran. Im-
+age transformer.
+In International conference on machine
+learning, pages 4055–4064. PMLR, 2018. 2
+[39] William Peebles, Ilija Radosavovic, Tim Brooks, Alexei
+Efros, and Jitendra Malik. Learning to learn with genera-
+tive models of neural network checkpoints. arXiv preprint
+arXiv:2209.12892, 2022. 2
+[40] Ethan Perez, Florian Strub, Harm De Vries, Vincent Du-
+moulin, and Aaron Courville. Film: Visual reasoning with a
+general conditioning layer. In AAAI, 2018. 2, 5
+[41] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya
+Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry,
+Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learn-
+ing transferable visual models from natural language super-
+vision. In ICML, 2021. 2
+[42] Alec Radford, Karthik Narasimhan, Tim Salimans, and Ilya
+Sutskever. Improving language understanding by generative
+pre-training. 2018. 1
+[43] Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Dario
+Amodei, Ilya Sutskever, et al. Language models are unsu-
+pervised multitask learners. 2019. 1
+[44] Ilija Radosavovic, Justin Johnson, Saining Xie, Wan-Yen Lo,
+and Piotr Doll´ar. On network design spaces for visual recog-
+nition. In ICCV, 2019. 3
+[45] Ilija Radosavovic, Raj Prateek Kosaraju, Ross Girshick,
+Kaiming He, and Piotr Doll´ar. Designing network design
+spaces. In CVPR, 2020. 3
+[46] Aditya Ramesh, Prafulla Dhariwal, Alex Nichol, Casey Chu,
+and Mark Chen. Hierarchical text-conditional image gener-
+ation with clip latents. arXiv:2204.06125, 2022. 1, 2, 3, 4
+[47] Aditya Ramesh, Mikhail Pavlov, Gabriel Goh, Scott Gray,
+Chelsea Voss, Alec Radford, Mark Chen, and Ilya Sutskever.
+Zero-shot text-to-image generation. In ICML, 2021. 1, 2
+[48] Robin Rombach, Andreas Blattmann, Dominik Lorenz,
+Patrick Esser, and Bj¨orn Ommer. High-resolution image syn-
+thesis with latent diffusion models. In CVPR, 2022. 2, 3, 4,
+6, 9
+[49] Olaf Ronneberger, Philipp Fischer, and Thomas Brox. U-
+net: Convolutional networks for biomedical image segmen-
+tation. In International Conference on Medical image com-
+puting and computer-assisted intervention, pages 234–241.
+Springer, 2015. 2, 3
+
+[50] Chitwan Saharia, William Chan, Saurabh Saxena, Lala
+Li, Jay Whang, Emily Denton, Seyed Kamyar Seyed
+Ghasemipour, Burcu Karagol Ayan, S. Sara Mahdavi,
+Rapha Gontijo Lopes, Tim Salimans, Jonathan Ho, David J
+Fleet, and Mohammad Norouzi.
+Photorealistic text-to-
+image diffusion models with deep language understanding.
+arXiv:2205.11487, 2022. 3
+[51] Tim Salimans, Ian Goodfellow, Wojciech Zaremba, Vicki
+Cheung, Alec Radford, Xi Chen, and Xi Chen. Improved
+techniques for training GANs. In NeurIPS, 2016. 6
+[52] Tim Salimans, Andrej Karpathy, Xi Chen, and Diederik P
+Kingma.
+PixelCNN++: Improving the pixelcnn with dis-
+cretized logistic mixture likelihood and other modiﬁcations.
+arXiv preprint arXiv:1701.05517, 2017. 2
+[53] Axel Sauer, Katja Schwarz, and Andreas Geiger. Stylegan-
+xl: Scaling stylegan to large diverse datasets. In SIGGRAPH,
+2022. 9
+[54] Jascha Sohl-Dickstein, Eric Weiss, Niru Maheswaranathan,
+and Surya Ganguli.
+Deep unsupervised learning using
+nonequilibrium thermodynamics. In ICML, 2015. 3
+[55] Jiaming Song, Chenlin Meng, and Stefano Ermon. Denois-
+ing diffusion implicit models. arXiv:2010.02502, 2020. 3
+[56] Yang Song and Stefano Ermon. Generative modeling by es-
+timating gradients of the data distribution. In NeurIPS, 2019.
+3
+[57] Andreas Steiner, Alexander Kolesnikov, Xiaohua Zhai, Ross
+Wightman, Jakob Uszkoreit, and Lucas Beyer. How to train
+your ViT? data, augmentation, and regularization in vision
+transformers. TMLR, 2022. 6
+[58] Aaron Van den Oord, Nal Kalchbrenner, Lasse Espeholt,
+Oriol Vinyals, Alex Graves, et al. Conditional image genera-
+tion with pixelcnn decoders. Advances in neural information
+processing systems, 29, 2016. 2
+[59] Aaron Van Den Oord, Oriol Vinyals, et al. Neural discrete
+representation learning. Advances in neural information pro-
+cessing systems, 30, 2017. 2
+[60] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-
+reit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia
+Polosukhin. Attention is all you need. In NeurIPS, 2017. 1,
+2, 5
+[61] Tete Xiao, Piotr Dollar, Mannat Singh, Eric Mintun, Trevor
+Darrell, and Ross Girshick. Early convolutions help trans-
+formers see better. In NeurIPS, 2021. 6
+[62] Jiahui Yu, Yuanzhong Xu, Jing Yu Koh, Thang Luong,
+Gunjan Baid, Zirui Wang, Vijay Vasudevan, Alexander Ku,
+Yinfei Yang, Burcu Karagol Ayan, et al.
+Scaling autore-
+gressive models for content-rich text-to-image generation.
+arXiv:2206.10789, 2022. 2
+[63] Xiaohua Zhai, Alexander Kolesnikov, Neil Houlsby, and Lu-
+cas Beyer. Scaling vision transformers. In CVPR, 2022. 2,
+5
+
+11
+
+Figure 11. Additional selected samples from our 512×512 and 256×256 resolution DiT-XL/2 models. We use a classiﬁer-free guidance
+scale of 6.0 for the 512 × 512 model and 4.0 for the 256 × 256 model. Both models use the ft-EMA VAE decoder.
+
+A. Additional Implementation Details
+
+We include detailed information about all of our DiT
+models in Table 4, including both 256 × 256 and 512 × 512
+models. In Figure 13, we report DiT training loss curves.
+Finally, we also include Gﬂop counts for DDPM U-Net
+models from ADM and LDM in Table 6.
+
+DiT model details.
+To embed input timesteps, we use
+a 256-dimensional frequency embedding [9] followed by
+a two-layer MLP with dimensionality equal to the trans-
+former’s hidden size and SiLU activations. Each adaLN
+layer feeds the sum of the timestep and class embeddings
+into a SiLU nonlinearity and a linear layer with output neu-
+rons equal to either 4× (adaLN) or 6× (adaLN-Zero) the
+transformer’s hidden size. We use GELU nonlinearities (ap-
+proximated with tanh) in the core transformer [16].
+
+Classiﬁer-free guidance on a subset of channels.
+In our
+experiments using classiﬁer-free guidance, we applied guid-
+ance only to the ﬁrst three channels of the latents instead of
+all four channels. Upon investigating, we found that three-
+channel guidance and four-channel guidance give similar
+
+B. Model Samples
+
+We show samples from our two DiT-XL/2 models at
+512 × 512 and 256 × 256 resolution trained for 3M and 7M
+steps, respectively. Figures 1 and 11 show selected samples
+from both models. Figures 14 through 33 show uncurated
+samples from the two models across a range of classiﬁer-
+free guidance scales and input class labels (generated with
+250 DDPM sampling steps and the ft-EMA VAE decoder).
+As with prior work using guidance, we observe that larger
+scales increase visual ﬁdelity and decrease sample diversity.
+
+12
+
+Table 4. Details of all DiT models. We report detailed information about every DiT model in our paper. Note that FID-50K here is
+computed without classiﬁer-free guidance. Parameter and ﬂop counts exclude the VAE model which contains 84M parameters across the
+encoder and decoder. For both the 256 × 256 and 512 × 512 DiT-XL/2 models, we never observed FID saturate and continued training
+them as long as possible. Numbers reported in this table use the ft-MSE VAE decoder.
+
+C. Additional Scaling Results
+
+Impact of scaling on metrics beyond FID.
+In Figure 12,
+we show the effects of DiT scale on a suite of evaluation
+metrics—FID, sFID, Inception Score, Precision and Recall.
+We ﬁnd that our FID-driven analysis in the main paper gen-
+eralizes to the other metrics—across every metric, scaled-up
+DiT models are more compute-efﬁcient and model Gﬂops
+are highly-correlated with performance. In particular, In-
+ception Score and Precision beneﬁt heavily from increased
+model scale.
+
+Impact of scaling on training loss.
+We also examine the
+impact of scale on training loss in Figure 13. Increasing
+DiT model Gﬂops (via transformer size or number of input
+tokens) causes the training loss to decrease more rapidly and
+saturate at a lower value. This phenomenon is consistent
+with trends observed with language models, where scaled-
+up transformers demonstrate both improved loss curves as
+well as improved performance on downstream evaluation
+suites [26].
+
+D. VAE Decoder Ablations
+
+We used off-the-shelf, pre-trained VAEs across our ex-
+periments. The VAE models (ft-MSE and ft-EMA) are ﬁne-
+tuned versions of the original LDM “f8” model (only the
+decoder weights are ﬁne-tuned). We monitored metrics for
+our scaling analysis in Section 5 using the ft-MSE decoder,
+and we used the ft-EMA decoder for our ﬁnal metrics re-
+ported in Tables 2 and 3. In this section, we ablate three
+
+Table 5. Decoder ablation. We tested different pre-trained VAE
+decoder weights available at https://huggingface.co/
+stabilityai/sd-vae-ft-mse. Different pre-trained de-
+coder weights yield comparable results on ImageNet 256 × 256.
+
+Table 6. Gﬂop counts for baseline diffusion models that use U-
+Net backbones. Note that we only count Flops for DDPM com-
+ponents.
+
+different choices of the VAE decoder; the original one used
+by LDM and the two ﬁne-tuned decoders used by Stable
+Diffusion. Because the encoders are identical across mod-
+els, the decoders can be swapped-in without retraining the
+diffusion model. Table 5 shows results; XL/2 continues to
+outperform all prior diffusion models when using the LDM
+decoder.
+
+13
+
+Figure 12. DiT scaling behavior on several generative modeling metrics. Left: We plot model performance as a function of total training
+compute for FID, sFID, Inception Score, Precision and Recall. Right: We plot model performance at 400K training steps for all 12 DiT
+variants against transformer Gﬂops, ﬁnding strong correlations across metrics. All values were computed using the ft-MSE VAE decoder.
+
+14
+
+[[None, 'S/8 S/4 S/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'S/8 S/4 S/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'S/8 S/4 S/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'S/8 S/4 S/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'S/8 S/4 S/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'S/8 S/4 S/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'S/8 S/4 S/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'S/8 S/4 S/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'S/8 S/4 S/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'S/8 S/4 S/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'S/8 S/4 S/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'S/8 S/4 S/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'B/8 B/4 B/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'B/8 B/4 B/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'B/8 B/4 B/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'B/8 B/4 B/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'B/8 B/4 B/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'B/8 B/4 B/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'B/8 B/4 B/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'B/8 B/4 B/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'B/8 B/4 B/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'B/8 B/4 B/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'B/8 B/4 B/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'B/8 B/4 B/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'L/8 L/4 L/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'L/8 L/4 L/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'L/8 L/4 L/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'L/8 L/4 L/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'L/8 L/4 L/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'L/8 L/4 L/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'L/8 L/4 L/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'L/8 L/4 L/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'L/8 L/4 L/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'L/8 L/4 L/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'L/8 L/4 L/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'L/8 L/4 L/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/8 XL/4 XL/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/8 XL/4 XL/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/8 XL/4 XL/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/8 XL/4 XL/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/8 XL/4 XL/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/8 XL/4 XL/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/8 XL/4 XL/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/8 XL/4 XL/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/8 XL/4 XL/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/8 XL/4 XL/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/8 XL/4 XL/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/8 XL/4 XL/2'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/2 (256x256) XL/2 (512x512)'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/2 (256x256) XL/2 (512x512)'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/2 (256x256) XL/2 (512x512)'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/2 (256x256) XL/2 (512x512)'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/2 (256x256) XL/2 (512x512)'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/2 (256x256) XL/2 (512x512)'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/2 (256x256) XL/2 (512x512)'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/2 (256x256) XL/2 (512x512)'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/2 (256x256) XL/2 (512x512)'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/2 (256x256) XL/2 (512x512)'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/2 (256x256) XL/2 (512x512)'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+[[None, 'XL/2 (256x256) XL/2 (512x512)'],
+ ['', '0.20'],
+ ['', '0.19'],
+ ['', '0.18'],
+ ['', '0.17'],
+ ['', '0.16'],
+ ['', '0.15'],
+ ['', '0.14'],
+ ['', '0 10K 20K 30K 40K 50K 60K 70K 80K 90K 100K'],
+ ['7', ''],
+ ['6', ''],
+ ['', ''],
+ ['5', ''],
+ ['', '']]
+15
+
+Figure 14. Uncurated 512 × 512 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 4.0
+Class label = “arctic wolf” (270)
+
+Figure 15. Uncurated 512 × 512 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 4.0
+Class label = “volcano” (980)
+
+16
+
+Figure 16. Uncurated 512 × 512 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 4.0
+Class label = “husky” (250)
+
+Figure 17. Uncurated 512 × 512 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 4.0
+Class label = “sulphur-crested cockatoo” (89)
+
+17
+
+Figure 18. Uncurated 512 × 512 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 4.0
+Class label = “cliff drop-off” (972)
+
+Figure 19. Uncurated 512 × 512 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 4.0
+Class label = “balloon” (417)
+
+18
+
+Figure 20. Uncurated 512 × 512 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 4.0
+Class label = “lion” (291)
+
+Figure 21. Uncurated 512 × 512 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 4.0
+Class label = “otter” (360)
+
+19
+
+Figure 22. Uncurated 512 × 512 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 2.0
+Class label = “red panda” (387)
+
+Figure 23. Uncurated 512 × 512 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 2.0
+Class label = “panda” (388)
+
+20
+
+Figure 24. Uncurated 512 × 512 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 1.5
+Class label = “coral reef” (973)
+
+Figure 25. Uncurated 512 × 512 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 1.5
+Class label = “macaw” (88)
+
+21
+
+Figure 26. Uncurated 256 × 256 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 4.0
+Class label = “macaw” (88)
+
+Figure 27. Uncurated 256 × 256 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 4.0
+Class label = “dog sled” (537)
+
+22
+
+Figure 28. Uncurated 256 × 256 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 4.0
+Class label = “arctic fox” (279)
+
+Figure 29. Uncurated 256 × 256 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 4.0
+Class label = “loggerhead sea turtle” (33)
+
+23
+
+Figure 30. Uncurated 256 × 256 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 2.0
+Class label = “golden retriever” (207)
+
+Figure 31. Uncurated 256 × 256 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 2.0
+Class label = “lake shore” (975)
+
+24
+
+Figure 32. Uncurated 256 × 256 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 1.5
+Class label = “space shuttle” (812)
+
+Figure 33. Uncurated 256 × 256 DiT-XL/2 samples.
+Classiﬁer-free guidance scale = 1.5
+Class label = “ice cream” (928)
+
+25

@@ -1,0 +1,1312 @@
+DeepReID: Deep Filter Pairing Neural Network for Person Re-Identiﬁcation
+
+Wei Li
+Rui Zhao
+Tong Xiao
+Xiaogang Wang∗
+
+The Chinese University of Hong Kong, Hong Kong
+
+lwthucs@gmail.com, {rzhao, xiaotong, xgwang}@ee.cuhk.edu.hk
+
+Abstract
+
+1. Introduction
+
+[['pedestrians observed in non-overlapping camera views with', None],
+ ['visual features', '[13, 9, 35, 1, 7, 3, 51, 20, 19, 16, 29, 26, 24,']]
+(a) Samples from our new dataset, CUHK03
+
+(b) Samples from the VIPeR dataset [12]
+
+Figure 1. Samples of pedestrian images observed in different cam-
+era views in person re-identiﬁcation. The two adjacent images
+have the same identity.
+
+match the visual features of pedestrians captured in differ-
+ent camera views due to the large variations of lightings,
+poses, viewpoints, image resolutions, photometric settings
+of cameras, and cluttered backgrounds. Some examples are
+shown in Figure 1.
+The typical pipeline of a person re-identiﬁcation sys-
+tem is shown in Figure 2. In practice, it should start with
+automatic pedestrian detection, which is an essential step
+for extracting pedestrians from long-hour recorded videos.
+Given a pedestrian detection bounding box, manually de-
+signed features are used to characterize the image region
+in all the existing works, although they may be suboptimal
+for the task of person re-identiﬁcation. Image regions of
+the same person undergo photometric transforms due to the
+change of lighting conditions and camera settings. Their
+geometric transforms are caused by misalignment and the
+
+1
+
+Figure 2. Pipeline of person re-identiﬁcation.
+
+[['ntribution of this paper is three-fold.', 'Firstly'],
+ ['filter pairing neural network (FPNN)', 'for pe']]
+the-art detector [10] for comprehensive evaluation.
+
+2. Related Work
+
+[['feature pool is not optimally designed.', 'The right way is to'],
+ ['automatically learn features from data together with other', ''],
+ ['components. This is hard to achieve without deep learning', '']]
+Maxpooling
+
+shared weights) 
+and Maxpooling
+
+Fully Connected
+Softmax
+
+N
+
+Figure 3. Filter pairing neural network.
+
+Deep learning has achieved great success in solving
+many computer vision problems, including hand-written
+digit recognition [22], object recognition [17, 36], object
+detection [38, 31, 46, 28], image classiﬁcation [23, 21],
+scene understanding [8], and face recognition [5, 39, 52,
+40]. Although some deep learning works [32, 39] share the
+spirit of jointly optimizing components of vision systems,
+their problems, challenges, models and training strategies
+are completely different from ours. They did not design
+special layers to explicitly handle cross-view photometric
+and geometric transforms, misdetection of patch matching
+and background clutter. To our knowledge, this paper is the
+ﬁrst work to use deep learning for person re-identiﬁcation.
+
+3. Model
+
+The architecture of the proposed FPNN is shown in Fig-
+ure 3. It is composed of six layers to handle misalignment,
+cross-view photometric and geometric transforms, occlu-
+sions and background clutter in person re-identiﬁcation.
+The design of each layer is described below.
+
+3.1. Feature extraction
+
+The ﬁrst layer is a convolutional and max-pooling layer.
+It takes two pedestrian images I and J observed in differ-
+ent camera views as input. They have three color chan-
+nels (RGB or LAB) and have the size of Him × Wim.
+The photometric transforms are modeled with a convolu-
+tional layer that outputs local features extracted by ﬁlter
+pairs. By convoluting a ﬁlter with the entire image, the re-
+sponses at all the local patches are extracted as local fea-
+
+tures.
+The ﬁlters (Wk, Vk) applied to different camera
+views are paired. If K1 ﬁlter pairs are used and each ﬁl-
+ter is in size of m1 ×m1 ×3, the output map for each image
+has K1 channels and is in size of H0 × W0 × K1, where
+H0 = Him −m1 + 1 and W0 = Wim −m1 + 1. We deﬁne
+the ﬁltering functions f, g : RHim×Wim×3 →RH0×W0×K1
+
+f k
+ij =σ((Wk ∗I)ij + bI
+k)
+(1)
+
+gk
+ij =σ((Vk ∗J)ij + bJ
+k).
+(2)
+
+The convolution operation is denoted as ∗. A nonlin-
+ear activation function σ(·) is used to re-scale the linear
+output and chosen as σ(x) = max(x, 0). After ﬁltering,
+each patch is represented by a K1-channel feature vector.
+The activation function normalizes and balances different
+feature channels.
+The parameters {(Wk, Vk, bI
+k, bJ
+k)} of
+the ﬁlter pairs are automatically learned from data. Two
+paired ﬁlters represent the same feature most discrimina-
+tive for person re-identiﬁcation. They are applied to dif-
+ferent camera views and their difference reﬂects the photo-
+metric transforms. The convolutional layer is followed by
+max-pooling, which makes the features robust to local mis-
+alignment. Each feature map is partitioned into H1 × W1
+subregions and the maximum response in each subregion is
+taken as the output. The output of the max-pooling layer is
+a H1 × W1 × K1 feature map.
+
+3.2. Patch matching
+
+The second patch matching layer is to match the ﬁlter
+responses of local patches across views. Considering the
+geometric constraint, a pedestrian image is divided into M
+
+Figure 4. Illustration of patch matching in FPNN. One stripe gen-
+erates two patch displacement matrices because there are two ﬁlter
+pairs. One detects blue color and the other detects green.
+
+horizontal stripes(height factoring in Figure 3), and each
+stripe has W1 patches. Image patches are matched only
+within the same stripe. Since there are K1 ﬁlter pairs repre-
+senting different features, the outputs of the patch matching
+layer are K1M W1 ×W1 patch displacement matrices. The
+output of the patch matching layer is
+
+Sk
+(i,j)(i′,j′) = f k
+ijgk
+i′j′,
+(3)
+
+These displacement matrices encode the spatial patterns of
+patch matching under the different features. An illustration
+is shown in Figure 4. If a matrix element Sk
+(i,j)(i′,j′) has a
+high value, it indicates that patches (i, j) and (i′, j′) both
+have high responses on a speciﬁc feature encoded by the
+ﬁlter pair (Wk, Vk).
+
+3.3. Modeling mixture of photometric transforms
+
+Due to various intra- and inter-view variations, one vi-
+sual feature (such as red clothes) may undergo multiple pho-
+tometric transforms. In order to improve the robustness on
+patch matching, a maxout-grouping layer is added. The
+patch displacement matrices of K1 feature channels are di-
+vided into T groups. Within each group, only the maximum
+activation is passed to the next layer. In this way, each fea-
+ture is represented by multiple redundant channels. It al-
+lows to model a mixture of photometric transforms. During
+the training process, with the backpropagation algorithm,
+only the ﬁlter pair with the maximum response recieves the
+gradients and is updated. It drives ﬁlter pairs in the same
+group to compete for the gradients. Eventually, only one
+ﬁlter has large response to a training sample. Therefore,
+image patches have sparse responses with the learned ﬁlter
+pairs. It is well known that sparsity is a property to eliminate
+noise and redundancy. The output of the maxout grouping
+layer is TM W1 × W1 displacement matrices. This is illus-
+trated in Figure 5.
+
+3.4. Modeling part displacement
+
+Body parts can be viewed as adjacent patches. Another
+convolution and max-pooling layer is added on the top of
+patch displacement matrices to obtain the displacement ma-
+trices of body parts on a larger scale.
+It takes the MT
+
+Figure 5. Maxout pooling. Left: Responses of patches to four ﬁlter
+pairs (indicated by the colors of yellow, purple, green and white)
+on two stripes. Middle: Four patch displacement matrices after
+passing the patch matching layer. Without maxout grouping, each
+matrix only has one patch with large response. Right: Group four
+channels together and take the maximum value to form a single
+channel output. A line structure is formed.
+
+W1 × W1 patch displacement matrices as input and treat
+them as M W1 × W1 images with T channels. Similar to
+the ﬁrst convolutional layer, K2 m2 × m2 × T ﬁlters are
+applied to all the M images, and the output of this layer is
+M W2 × W2 × K2 maps. The learned ﬁlters capture the
+local patterns of part displacements.
+
+3.5. Modeling pose and viewpoint transforms
+
+Pedestrians undergo various pose and viewpoint trans-
+forms. Such global geometric transforms can be viewed as
+different combinations of part displacement and their dis-
+tributions are multi-modal. For example, two transforms
+can share the same displacement on upper bodies, but are
+different in the displacement of legs. Each output of a hid-
+den node in the convolutional and maxpooling layer can be
+viewed as a possible part displacement detected with a par-
+ticular visual feature. All of these hidden nodes form the
+input vector of the next fully connected layer. In the next
+layer, each hidden node is a combination of all the possible
+part displacements and represents a global geometric trans-
+form. N hidden nodes are able to model a mixture of global
+geometric transforms.
+
+3.6. Identity Recognition
+
+The last softmax layer uses the softmax function to mea-
+sure whether two input images belong to the same person
+or not given the global geometric transforms detected in the
+previous layer. Its output is a binary variable y deﬁned as
+
+Let y = 1 if two pedestrian images (In, Jn) are matched,
+otherwise y = 0. x is the input from the previous layer. a0,
+a1, b0 and b1 are the combination weights and bias terms
+to be learned. Given the class labels of H training sam-
+ple pairs, the negative log-likelihood is used as the cost for
+
+training and could be written as
+
+cost = −
+
+H
+∑
+
+n
+yn log(p(y = 1|Φ, (In, Jn)))
+
++ (1 −yn) log(1 −p(y = 1|Φ, (In, Jn))).
+(5)
+
+It exerts large penalty for misclassiﬁed samples. For ex-
+ample, if yn = 0 and p(y = 1|Φ, (In, Jn)) = 1, (1 −
+yn)log(1−p(y = 1|Φ, (In, Jn))) →−∞. Φ represents the
+set of parameters of the whole neural network to be learned.
+
+4. Training Strategies
+
+Our training algorithm adopts the mini-batch stochastic
+gradient descent proposed in [11]. The training data is di-
+vided into mini-batches. The training errors are calculated
+upon each mini-batch in the soft-max layer and get backpro-
+pogated to the lower layers. In addition, several carefully
+designed training strategies are proposed.
+
+4.1. Dropout
+
+In person re-identiﬁcation, due to large cross-view vari-
+ations, misalignment, pose variations, and occlusions, it is
+likely for some patches on the same person (but in different
+views) to be mismatched. To make the trained FPNN toler-
+able to misdetection of patch correspondences, the dropout
+strategy [15] is adopted. For each training sample as input
+at each training iteration, some outputs of the ﬁrst convolu-
+tional layer (that is, extracted features with the ﬁlter pairs)
+are randomly selected and set as zeros. Gradients in back-
+propogation are calculated with those randomly muted ﬁlter
+responses to make the trained model more stable.
+
+4.2. Data Augmentation
+
+In the training set, the matched sample pairs (positive
+samples) are several orders fewer than non-matched pairs
+(negative samples). If they are directly used for training,
+the network tends to predict all the inputs as being non-
+matched. We augment data by simple translational trans-
+forms on each pedestrian image.
+For an original pedes-
+trian image of size Him × Wim, ﬁve images of the same
+size are randomly sampled around the original image center
+and their translations are from a uniform distribution in the
+range of [−0.05Him, 0.05Him] × [−0.05Wim, 0.05Wim].
+The matched sample pairs are enlarged by a factor of 25.
+
+4.3. Data balancing
+
+Each mini-batch keeps all the positive training samples
+and randomly selects the same number of negative train-
+ing samples at the very beginning of the training process.
+The network achieves a resonably good conﬁguration after
+the initial training. As the training process goes along, we
+gradually increase the number of negative samples in each
+mini-batch up to the ratio of 5 : 1.
+
+4.4. Bootstrapping
+
+After the network has been stabilized, we continue to
+select difﬁcult negative samples, which are predicted as
+matched pairs with high probabilities by the current net-
+work, and combine them with all the positive samples to fur-
+ther train the network iteratively. Because of the large num-
+ber of negative training samples, it is very time-consuming
+to re-predict all the negative samples with the current net-
+work after each epoch. We only re-predict hard samples
+selected in the previous epoch. Since these samples have
+been used to update the network, their predictions are ex-
+pected to have larger changes than other samples after the
+update.
+Each negative sample x is assigned with a score sk after
+each epoch k. Samples with the smallest sk are selected to
+re-train the network. At the beginning,
+
+s0 = 1 −p(x is a matched pair|Φ0),
+
+where Φ0 is the conﬁguration of the network. If x is se-
+lected as a hard sample for training in the previous epoch k,
+its score is updated as
+
+where Φk is the conﬁguration of the network trained after
+epoch k; otherwise, sk = λsk−1. The diminishing param-
+eter λ is set as 0.99. This increases the chance of those
+negative samples not being selected for a long time.
+
+5. Dataset
+
+All of the existing datasets are too small to train deep
+neural networks. We build a much larger dataset1 which in-
+cludes 13, 164 images of 1, 360 pedestrians. It is named
+CUHK03, since we already published two re-id datasets
+(CUHK01 [25] and CUHK02 [24]) in previous works. A
+comparison of the scales can be found in Table 1. The whole
+dataset is captured with six surveillance cameras.
+Each
+identity is observed by two disjoint camera views and has
+an average of 4.8 images in each view. Some examples are
+shown in Figure 1(a). Besides the scale, it has the following
+characteristics.
+(1) Apart from manually cropped pedestrian images, we
+provide samples detected with a state-of-the-art pedestrian
+detector [10].
+This is a more realistic setting and poses
+new problems rarely seen in existing datasets. From Fig-
+ure 1(a), we can see that misalignment, occlusions and body
+part missing are quite common in this dataset. The inac-
+curate detection also makes the geometric transforms com-
+plex. We further provide the original image frames and re-
+searchers can try their own detectors on this dataset.
+
+[['',
+ 'CUHK03',
+ 'VIPeR [12]',
+ 'i-LIDS [50]',
+ 'CAVIAR [3]',
+ 'Re-ID 2011 [16]',
+ 'GRID [27]',
+ 'CUHK01 [25]',
+ 'CUHK02 [24]'],
+ ['No. of images',
+ '13,164',
+ '1,264',
+ '476',
+ '1,220',
+ '2,450',
+ '500',
+ '1,942',
+ '7,264'],
+ ['No. of persons', '1,360', '632', '119', '72', '245', '250', '971', '1,816']]
+[['',
+ 'CUHK03',
+ 'VIPeR [12]',
+ 'i-LIDS [50]',
+ 'CAVIAR [3]',
+ 'Re-ID 2011 [16]',
+ 'GRID [27]',
+ 'CUHK01 [25]',
+ 'CUHK02 [24]'],
+ ['No. of images',
+ '13,164',
+ '1,264',
+ '476',
+ '1,220',
+ '2,450',
+ '500',
+ '1,942',
+ '7,264'],
+ ['No. of persons', '1,360', '632', '119', '72', '245', '250', '971', '1,816']]
+(2) Some existing datasets assume a single pair of cam-
+era views and their cross-view transforms are relatively sim-
+ple. In our dataset, samples collected from multiple pairs of
+camera views are all mixed and they form complex cross-
+view transforms. Moreover, our cameras monitor an open
+area where pedestrians walk in different directions, which
+leads to multiple view transforms even between the same
+pair of cameras.
+(3) Images are obtained from a series of videos recorded
+over months. Illumination changes are caused by weather,
+sun directions, and shadow distributions even within a sin-
+gle camera view. Our cameras have different settings, which
+also leads to photometric transforms.
+
+6. Experimental Results
+
+Most of the evaluations are conducted on the new
+dataset, since existing datasets are too small to train the
+deep model. An additional evaluation is on the CUHK01
+[25]. Our dataset is partitioned into training set (1160 per-
+sons), validation set (100 persons), and test set (100 per-
+sons). Each person has roughly 4.8 photos per view, which
+means there are almost 26, 000 positive training pairs be-
+fore data augmentation. A mini-batch contains 512 images
+pairs. Thus it takes about 300 mini-batches to go through
+the training set. The validation set is used to design the
+network architecture (the parameters of which are shown
+in Table 2). The experiments are conducted with 20 ran-
+dom splits and all the Cumulative Matching Characteristic
+(CMC) curves are single-shot results.
+Each image is preprocessed with histogram equalization
+and transformed to the LAB color space. It is normalized to
+the size of (64 × 32 × 3), and subtracted with the mean of
+all the pixels in that location. Our algorithm is implemented
+with GTX670 GPU. The training process takes about ﬁve
+hours to converge.
+We compare with three person re-identiﬁcation meth-
+ods (KISSME [20], eSDC [48], and SDALF [9]), four
+state-of-the-art metric learning methods (Information The-
+oretic Metric Learning (ITML)[6], Logistic Distance Met-
+ric Learning (LDM) [14], Largest Margin Nearest Neighbor
+(LMNN)[45], and Metric Learning to Rank (RANK)[30]),
+and directly using Euclidean distance to compare features.
+LMNN and ITML are widely used metric learning algo-
+rithms and have been used for person re-identiﬁcation in
+[25]. RANK is optimized for ranking problems, while per-
+son re-identiﬁcation is a ranking problem. LDM is specif-
+ically designed for face and person identiﬁcation prob-
+lems. When using metric learning methods and Euclidean
+
+[['H = 64\nim', 'W = 32\nim', 'K = 64\n1', 'm = 5\n1'],
+ ['H = 60', 'W = 28', 'H = 20', 'W = 9'],
+ ['0', '0', '1', '1'],
+ ['M = 20', 'T = 16', 'm = 3', 'W = 3'],
+ ['', '', '2', '2'],
+ ['K = 16', 'N = 128', '', ''],
+ ['2', '', '', '']]
+distance, the handcrafted features of dense color his-
+tograms and dense SIFT uniformly sampled from patches
+are adopted. Through extensive experimental evaluation in
+[48], it has been shown that these local features are more ef-
+fective on person re-identiﬁcation than most other features
+and the implementation is publicly available.
+
+6.1. Experiments on our new dataset
+
+On our CUHK03 dataset, we conduct comparisons us-
+ing both manually labeled pedestrian bounding boxes and
+automatically detected bounding boxes. Figure 6(a) plots
+the CMC curves of using manually labeled bounding boxes.
+Our FPNN outperforms all the methods in comparison with
+large margins.
+The relative improvement on the Rank-1
+identiﬁcation rate is 46% compared with the best perform-
+ing approach.
+Figure 6(b) shows the results of using automatically de-
+tected bounding boxes, which cause misalignment.
+The
+performance of other methods drop signiﬁcantly. For ex-
+ample, the Rank-1 identiﬁcation rate of the best perform-
+ing KISSME drops by 2.47%, while FPNN only drops by
+0.76%. It shows that FPNN is more robust to misalignment.
+In order to compare the learning capacity and generaliza-
+tion capability of different learning methods, we did another
+experiment by adding 933 images of 107 pedestrians to the
+training set, while keep the test set unchanged. Therefore,
+the training set has 1, 267 persons. These additional 933
+images are captured from four camera views different from
+those in the test set. Adding training samples, which do not
+accurately match the photometric and geometric transforms
+in the test set, makes the learning more difﬁcult. Figure 6(c)
+shows the changes of Rank-1 identiﬁcation rates of differ-
+ent methods. It is observed that the performance of most of
+the methods drops, because their limited learning capacity
+cannot effectively handle a more complex training set and
+the mismatch between the training and test sets. On the con-
+trary, the performance of our FPNN is improved because of
+its large learning capacity and also the fact that extra train-
+ing samples improve the learned low-level features which
+can be shared by different camera settings.
+
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+[['0.5 Euclidean ( 5.64%) Identificati Identificati\n'
+ 'I LT MM NL ( 5 7. .5 23 9% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK (10.42%)\n'
+ 'L SD DM ( (1 3 5. .5 61 0% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 8.76%)\n'
+ 'KISSME (14.17%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.5 Euclidean ( 4.94%) Rank-\n'
+ 'I LT MM NL ( 5 6. .1 24 5% %)\n'
+ '0.4 N ( )\n'
+ '0.3 RANK ( 8.52%) Relative\n'
+ 'L SD DM ( (1 0 4. .9 82 7% %)\n'
+ '0.2 A L F )\n'
+ '0.1 eSDC ( 7.68%)\n'
+ 'KISSME (11.70%)\n'
+ '0.0\n'
+ '0 20 40 60 80 100\n'
+ 'Rank',
+ '0.00\n−0.02\n−0.04\n−0.06\nF P N N ucl Ii Tdean M LL M N N\nE',
+ 'R A N K L D M S D A L eSF D C K IS S M E']]
+6.2. Evaluation of training strategies
+
+Experiments in Figure 7 (a) and (b) show the effective-
+ness of our dropout and bootstrapping training strategies.
+Figure 7(a) shows the Rank-1 identiﬁcation rates after dif-
+ferent numbers of training mini-batches on the validation
+set with dropout rates ranging from 0% to 20%. Without
+dropout, the identiﬁcation rate decreases with more train-
+ing mini-batches. It indicates that overﬁtting happens. With
+a 5% dropout rate, the identiﬁcation rate is high and con-
+verges on the validation set.
+Dropout makes the trained
+FPNN tolerable to misdetection of patch correspondences
+and have good generalization power. If the dropout rate is
+high (e.g. 20%2), it cannot reach a good identiﬁcation rate,
+even though the generalization power is good, because not
+enough features are passed to the next layer.
+Figure 7(b) shows the CMC curves of FPNN with and
+without the bootstrapping strategy.
+Bootstrapping is ef-
+fective in improving the Rank-1 identiﬁcation rate from
+15.66% to 19.89%. However, there is less difference on
+Rank-20. This may be attributed to the samples missed af-
+
+ter Rank-20 are particularly difﬁcult, while FPNN has given
+up ﬁtting these extreme cases in order to be robust.
+
+6.3. Experiments on the CUHK01 dataset
+
+We further evaluate FPNN on the CUHK01 dataset re-
+leased in [25]. In this dataset, there are 971 persons and
+each person only has two images in either camera view.
+Again, 100 persons are chosen for test and the remaining
+871 persons for training and validation. This dataset is chal-
+lenging for our approach, since the small number of sam-
+ples cannot train the deep model very well. There are only
+around 3, 000 pairs of positive training samples on it (com-
+pared with 26, 000 in our new dataset). Nevertheless, our
+FPNN outperforms most of the methods in comparison, ex-
+cept that its Rank-1 rate is slightly lower than KISSME. But
+its Rank-n (n > 10) rates are comparable to KISSME.
+
+7. Conclusion
+
+In this paper, we propose a new ﬁlter pairing neural net-
+work for person re-identiﬁcation. This method jointly op-
+timizes feature learning, photometric transforms, geomet-
+ric transforms, misalignment, occlusions and classiﬁcation
+
+under a uniﬁed deep architecture. It learns ﬁlter pairs to
+encode photometric transforms. Its large learning capacity
+allows to model a mixture of complex photometric and ge-
+ometric transforms. Some effective training strategies are
+adopted to train the network well. It outperforms state-of-
+the-art methods with large margins on a large scale bench-
+mark dataset.
+
+References
+
+[1] S. Bak, E. Corvee, F. Bremond, and M. Thonnat.
+Person re-
+identiﬁcation using spatial covariance regions of human body parts.
+In Proc. Int’l Conf. Advanced Video and Signal Based Surveillance,
+2010. 1, 2
+[2] S. G. C. Liu, C. C. Loy and G. Wang. Pop: Person re-identiﬁcation
+post-rank optimisation. In ICCV, 2013. 1
+[3] D. S. Cheng, M. Cristani, M. Stoppa, L. Bazzani, and V. Murino.
+Custom pictorial structures for re-identiﬁcation. In BMVC, 2011. 1,
+2, 6
+[4] E. D. Cheng and M. Piccardi. Matching of objects moving across
+disjoint cameras. In ICIP, 2006. 2
+[5] S. Chopra, R. Hadsell, and Y. LeCun. Learning a similarity met-
+ric discriminatively, with application to face veriﬁcation. In CVPR,
+2005. 3
+[6] J. V. Davis, B. Kulis, P. Jain, S. Sra, and I. S. Dhillon. Information-
+theoretic metric learning. In ICML, 2007. 2, 6
+[7] M. Dikmen, E. Akbas, T. Huang, and N. Ahuja. Pedestrian recogni-
+tion with a learned metric. In ACCV. 2011. 1
+[8] C. Farabet, C. Couprie, L. Najman, and Y. LeCun. Learning hierar-
+chical features for scene labeling. PAMI, 35:1915–1929, 2013. 3
+[9] M. Farenzena, L. Bazzani, A. Perina, V. Murino, and M. Cristani.
+Person re-identiﬁcation by symmetry-driven accumulation of local
+features. In CVPR, 2010. 1, 2, 6
+[10] P. Felzenszwalb, R. Girshick, D. McAllester, and D. Ramanan. Ob-
+ject Detection with Discriminatively Trained Part-Based Models.
+PAMI, 2010. 2, 5
+[11] I. J. Goodfellow, D. Warde-Farley, M. Mirza, A. C. Courville, and
+Y. Bengio. Maxout networks. CoRR, 2013. 5
+[12] D. Gray, S. Brennan, and H. Tao. Evaluating appearance models for
+recognition, reacquisition, and tracking. In PETS, 2007. 1, 2, 6
+[13] D. Gray and H. Tao. Viewpoint invariant pedestrian recognition with
+an ensemble of localized features. In ECCV, 2008. 1, 2
+[14] M. Guillaumin, J. Verbeek, and C. Schmid.
+Is that you? metric
+learning approaches for face identiﬁcation. In ICCV, 2009. 2, 6
+[15] G. E. Hinton, N. Srivastava, A. Krizhevsky, I. Sutskever, and
+R. R. Salakhutdinov. Improving neural networks by preventing co-
+adaptation of feature detectors. ArXiv e-prints, 2012. 5
+[16] M. Hirzer, P. M. Roth, M. K¨ostinger, and H. Bischof. Relaxed pair-
+wise learned metric for person re-identiﬁcation. In ECCV, 2012. 1,
+2, 6
+[17] K. Jarrett, K. Kavukcuoglu, M. Ranzato, and Y. LeCun. What is the
+best multi-stage architecture for object recognition? In ICCV, 2009.
+3
+[18] O. Javed, K. Shaﬁque, and M. Shah. Appearance modeling for track-
+ing in multiple non-overlapping cameras. In CVPR, 2005. 2
+[19] F. Jurie and A. Mignon. Pcca: A new approach for distance learning
+from sparse pairwise constraints. In CVPR, 2012. 1, 2
+[20] M. Kostinger, M. Hirzer, P. Wohlhart, P. Roth, and H. Bischof. Large
+scale metric learning from equivalence constraints. In CVPR, 2012.
+1, 2, 6
+[21] A. Krizhevsky, I. Sutskever, and G. Hinton. Imagenet classiﬁcation
+with deep convolutional neural networks. In NIPS, 2012. 3
+[22] Y. LeCun and Y. Bengio. The handbook of brain theory and neural
+networks. MIT Press, 1998. 3
+
+[23] H. Lee, R. Grosse, R. Ranganath, and A. Y. Ng. Convolutional deep
+belief networks for scalable unsupervised learning of hierarchical
+representations. In ICML, 2009. 3
+[24] W. Li and X. Wang. Locally aligned feature transforms across views.
+In CVPR, 2013. 1, 2, 5, 6
+[25] W. Li, R. Zhao, and X. Wang. Human reidentiﬁcation with trans-
+ferred metric learning. In ACCV, 2012. 2, 5, 6, 7
+[26] C. Liu, S. Gong, C. C. Loy, and X. Lin. Person re-identiﬁcation:
+What features are important? In Proc. First Int’l Workshop on Re-
+Identiﬁcation, 2012. 1, 2
+[27] C. C. Loy and T. Xiang. Multi-camera activity correlation analysis.
+In CVPR, 2009. 1, 2, 6
+[28] P. Luo, Y. Tian, X. Wang, and X. Tang. Switchable deep network for
+pedestrian detection. In CVPR, 2014. 3
+[29] B. Ma, Y. Su, and F. Jurie. Bicov: a novel image representation for
+person re-identiﬁcation and face veriﬁcation. In BMVC, 2012. 1
+[30] B. Mcfee and G. Lanckriet. Metric learning to rank. In ICML, 2010.
+
+2, 6
+[31] W. Ouyang, X. Chu, and X. Wang. Multi-source deep learning for
+human pose estimation. In CVPR, 2014. 3
+[32] W. Ouyang and X. Wang. Joint deep learning for pedestrian detec-
+tion. In ICCV, 2013. 3
+[33] F. Porikli. Inter-camera color calibration by correlation model func-
+tion. In ICIP, 2003. 2
+[34] B. Prosser, S. Gong, and T. Xiang. Multi-camera matching using bi-
+directional cumulative brightness transfer function. In BMVC, 2008.
+2
+[35] B. Prosser, W. Zheng, S. Gong, T. Xiang, and Q. Mary. Person re-
+identiﬁcation by support vector ranking. In BMVC, 2010. 1, 2
+[36] M. Ranzato, F.-J. Huang, Y.-L. Boureau, and Y. LeCun. Unsuper-
+vised learning of invariant feature hierarchies with applications to
+object recognition. In CVPR, 2007. 3
+[37] W. Schwartz and L. Davis.
+Learning discriminative appearance-
+based models using partial least sqaures. In SIBGRAPI, 2009. 2
+[38] P. Sermanet, K. Kavukcuoglu, and S. Chintala. Pedestrian detection
+with unsupervised and multi-stage feature learning. In CVPR, 2013.
+3
+[39] Y. Sun, X. Wang, and X. Tang. Deep convolutional network cascade
+for facial point detection. In CVPR, 2013. 3
+[40] Y. Sun, X. Wang, and X. Tang. Deep learning face representation
+from predicting 10,000 classes. In CVPR, 2014. 3
+[41] S. G. W. Zheng and T. Xiang. Re-identiﬁcation by relative distance
+comparison. PAMI, 2013. 1, 2
+[42] X. Wang. Intelligent multi-camera video surveillance: A review. Pat-
+tern Recognition Letters, 34:3–19, 2013. 1
+[43] X. Wang, G. Doretto, T. Sebastian, J. Rittscher, and P. Tu. Shape and
+appearance context modeling. In ICCV, 2007. 2
+[44] X. Wang and R. Zhao. Person Re-Identiﬁcation, chapter Person Re-
+identiﬁcation: System Design and Evaluation Overview, pages 351–
+370. Springer, 2014. 2
+[45] K. Q. Weinberger and L. K. Saul. Distance metric learning for large
+margin distance metric learning for large margin. JMLR, 2009. 2, 6
+[46] X. Zeng, W. Ouyang, and X. Wang. Multi-stage contextual deep
+learning for pedestrian detection. In ICCV, 2013. 3
+[47] R. Zhao, W. Ouyang, and X. Wang.
+Person re-identiﬁcation by
+salience matching. In ICCV, 2013. 2
+[48] R. Zhao, W. Ouyang, and X. Wang. Unsupervised salience learning
+for person re-identiﬁcation. In CVPR, 2013. 1, 2, 6
+[49] R. Zhao, W. Ouyang, and X. Wang. Learning mid-level ﬁlters for
+person re-identiﬁcation. In CVPR, 2014. 2
+[50] W. Zheng, S. Gong, and T. Xiang. Associating groups of people. In
+BMVC, 2009. 2, 6
+[51] W. Zheng, S. Gong, and T. Xiang. Person re-identiﬁcation by proba-
+bilistic relative distance comparison. In CVPR, 2011. 1, 2
+[52] Z. Zhu, P. Luo, X. Wang, and X. Tang. Deep learning identity pre-
+serving face space. In ICCV, 2013. 3
